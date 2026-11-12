@@ -7,6 +7,10 @@ export interface Network {
   rpc: string;
   evmRpc?: string;
   explorerTx: (hash: string) => string;
+  /** The public explorer keeps its network in a cookie, not the URL: tell the reader which one to pick. */
+  explorerNote?: string;
+  /** Raw tx JSON from the chain's own REST API: always opens on the right network. */
+  restTx: (hash: string) => string;
 }
 
 export const NETWORKS: Record<Network["name"], Network> = {
@@ -18,6 +22,8 @@ export const NETWORKS: Record<Network["name"], Network> = {
     rpc: "https://rpc-testnet.qore.host",
     evmRpc: "https://evm-testnet.qore.host",
     explorerTx: (h) => `https://explore.qore.network/tx/${h}`,
+    explorerNote: "switch the explorer's network to Testnet",
+    restTx: (h) => `https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/${h}`,
   },
   mainnet: {
     name: "mainnet",
@@ -27,6 +33,7 @@ export const NETWORKS: Record<Network["name"], Network> = {
     rpc: "https://rpc.qore.host",
     evmRpc: "https://evm.qore.host",
     explorerTx: (h) => `https://explore.qore.network/tx/${h}`,
+    restTx: (h) => `https://api.qore.host/cosmos/tx/v1beta1/txs/${h}`,
   },
   localnet: {
     name: "localnet",
@@ -34,6 +41,7 @@ export const NETWORKS: Record<Network["name"], Network> = {
     rest: "http://127.0.0.1:1317",
     rpc: "http://127.0.0.1:26657",
     explorerTx: (h) => `http://127.0.0.1:1317/cosmos/tx/v1beta1/txs/${h}`,
+    restTx: (h) => `http://127.0.0.1:1317/cosmos/tx/v1beta1/txs/${h}`,
   },
 };
 

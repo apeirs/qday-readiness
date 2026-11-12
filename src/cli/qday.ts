@@ -121,7 +121,7 @@ async function cmdAttest(a: Args, net: Network) {
     return;
   }
   const res = await attestWithKey(k, net, (line) => console.log(line));
-  console.log(`\nAttestation tx: ${res.txHash}\n  ${net.explorerTx(res.txHash)}`);
+  console.log(`\nAttestation tx: ${res.txHash}\n  ${net.explorerTx(res.txHash)}${net.explorerNote ? ` (${net.explorerNote})` : ""}\n  ${net.restTx(res.txHash)}`);
   const v = await verifyAttestation(res.txHash, net);
   if (v) for (const ch of v.checks) console.log(`  ${ch.ok === true ? "PASS" : ch.ok === false ? "FAIL" : " -- "}  ${ch.label}: ${ch.detail}`);
 }

@@ -126,6 +126,11 @@ function VerifyResult({ v, net }: { v: VerifiedAttestation; net: Network }) {
       <a href={net.explorerTx(v.tx.txhash)} target="_blank" rel="noreferrer">
         Open {v.tx.txhash.slice(0, 10)}… in the explorer
       </a>
+      {net.explorerNote && <span className="muted"> ({net.explorerNote})</span>}
+      {" · "}
+      <a href={net.restTx(v.tx.txhash)} target="_blank" rel="noreferrer">
+        raw tx JSON
+      </a>
     </div>
   );
 }

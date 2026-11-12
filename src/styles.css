@@ -112,3 +112,4 @@ button.link { border: none; background: none; color: var(--accent); padding: 0; 
 .mark.pass { color: var(--low); } .mark.fail { color: var(--crit); } .mark.na { color: var(--info); }
 .verify a { color: var(--accent); }
 .foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); padding-top: 12px; }
+.muted { color: var(--muted); }

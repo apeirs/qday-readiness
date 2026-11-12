@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Unit tests (scoring, key checks, network policy, memo, gateway, Worker)
+        run: npm test
+      - name: Type-check and production build
+        run: npm run build
+      - name: No key material in the build or the tracked files
+        run: scripts/check-secrets.sh dist
+      - name: Bundle the Cloudflare Worker (dry run, nothing uploaded)
+        run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker"
+
+  # The qday CLI used as a CI gate: exits 1 if an account has a critical finding.
+  # Reads public testnet state, so a testnet outage shows here without failing the build.
+  testnet-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Our attesting account must stay quantum-ready on qorechain-diana
+        run: npm run qday -- scan qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m

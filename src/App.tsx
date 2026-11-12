@@ -5,12 +5,16 @@ import { useAccount } from "wagmi";
 import { splitAddresses } from "./core/addr";
 import { buildMemo, verifyAttestation, type VerifiedAttestation } from "./core/attest";
 import { browserNetwork, NETWORKS, type Network } from "./core/networks";
+import { describePolicy } from "./core/format";
 import {
+  enforcesHybrid,
+  fetchPolicy,
   formatQor,
   isScanResult,
   projectAfterRegistration,
   scanAddress,
   scanMany,
+  type NetworkPolicy,
   type ScanResult,
 } from "./core/scan";
 import { connectNative, qorexState, sendAttestation } from "./qorex";
@@ -20,6 +24,15 @@ type NetName = "testnet" | "mainnet";
 const NEED_UNREGISTERED_UQOR = 150_000n;
 const NEED_REGISTERED_UQOR = 60_000n;
 type Row = ScanResult | { input: string; error: string };
+const REPO = "https://github.com/apeirs/qday-readiness";
+const FEST_PAGE = "https://build.qorechain.io/p/q-day-readiness-audit";
+const QOREX_INSTALL = "https://chromewebstore.google.com/detail/qorex/cflpnggbnnifibblifgbeobogdpfjpcg";
+
+/** A hybrid-signed attestation sent from this app on testnet, for a one-click verify. */
+const EXAMPLE_TX: Record<NetName, string> = {
+  testnet: "6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8",
+  mainnet: "",
+};
 
 const EXAMPLES: Record<NetName, string[]> = {
   testnet: [
@@ -54,7 +67,15 @@ function GradeBadge({ grade }: { grade: ScanResult["grade"] }) {
   return <span className={`grade grade-${grade === "n/a" ? "na" : grade}`}>{grade}</span>;
 }
 
-function ResultCard({ r }: { r: Row }) {
+function ResultCard({ r, input }: { r?: Row; input: string }) {
+  if (!r) {
+    return (
+      <article className="card card-pending" aria-busy="true">
+        <code className="addr">{input}</code>
+        <p className="muted">Reading account, PQC key, balances, EVM code…</p>
+      </article>
+    );
+  }
   if (!isScanResult(r)) {
     return (
       <article className="card card-error">
@@ -83,6 +104,11 @@ function ResultCard({ r }: { r: Row }) {
       </header>
       <ul className="facts">
         <li>{r.pqc ? `PQC key: ${r.pqc.algorithm}` : "PQC key: none"}</li>
+        {r.pqc?.publicKeyBytes && (
+          <li title="SHA-256 of the registered ML-DSA-87 public key (first 8 bytes)">
+            {r.pqc.publicKeyBytes.toLocaleString("en-US")}-byte key <code>sha256:{r.pqc.fingerprint ?? "?"}</code>
+          </li>
+        )}
         <li>{r.classicalPubkeyOnChain ? `Classical key public (${r.classicalKeyType})` : "Classical key not on chain"}</li>
         {holdings.length > 0 && <li>Holds {holdings.join(" · ")}</li>}
       </ul>
@@ -148,6 +174,8 @@ export function App() {
   const [verifyError, setVerifyError] = useState("");
   const [attestStep, setAttestStep] = useState("");
   const [attestError, setAttestError] = useState("");
+  const [inputs, setInputs] = useState<string[]>([]);
+  const [policy, setPolicy] = useState<NetworkPolicy | null | undefined>();
   const { address: evmAddress, isConnected } = useAccount();
   const qorex = qorexState();
 
@@ -155,11 +183,17 @@ export function App() {
     async (inputs: string[], tx?: string) => {
       if (!inputs.length) return;
       setScanning(true);
+      setInputs(inputs);
       setRows([]);
       writeUrl(netName, inputs, tx);
-      const acc: Row[] = new Array(inputs.length);
-      await scanMany(inputs, net, {}, () => undefined).then((res) => res.forEach((r, i) => (acc[i] = r)));
-      setRows(acc);
+      // Cards fill in as each account answers; the rest show as pending.
+      await scanMany(inputs, net, {}, (r, i) =>
+        setRows((prev) => {
+          const next = [...prev];
+          next[i] = r;
+          return next;
+        }),
+      );
       setScanning(false);
     },
     [net, netName],
@@ -182,6 +216,17 @@ export function App() {
     },
     [net],
   );
+
+  useEffect(() => {
+    let live = true;
+    setPolicy(undefined);
+    fetchPolicy(net)
+      .then((p) => live && setPolicy(p ?? null))
+      .catch(() => live && setPolicy(null));
+    return () => {
+      live = false;
+    };
+  }, [net]);
 
   useEffect(() => {
     if (initial.addrs.length) void runScan(initial.addrs, initial.tx || undefined);
@@ -249,6 +294,17 @@ export function App() {
         <div>
           <h1>Q-Day Readiness Audit</h1>
           <p className="tag">Which QoreChain accounts would a quantum attacker take first? Scan, fix, and prove it on chain.</p>
+          <ol className="steps">
+            <li>
+              <strong>Scan</strong> any qor1… or 0x… address: grade A-F and what a quantum attacker could do
+            </li>
+            <li>
+              <strong>Fix</strong> the one thing it flags, usually registering an ML-DSA-87 key
+            </li>
+            <li>
+              <strong>Prove</strong> it with one hybrid-signed transaction anyone can verify
+            </li>
+          </ol>
         </div>
         <div className="top-right">
           <select
@@ -266,6 +322,16 @@ export function App() {
           <ConnectButton chainStatus="none" showBalance={false} />
         </div>
       </header>
+
+      <p className={`policy ${policy && !enforcesHybrid(policy) ? "policy-weak" : ""}`} aria-live="polite">
+        <span className="dot" aria-hidden="true" />
+        <strong>{NETWORKS[netName].chainId}</strong>{" "}
+        {policy === undefined
+          ? "reading the network's PQC policy…"
+          : policy === null
+            ? "PQC policy could not be read; scans still work."
+            : `enforces: ${describePolicy(policy)}`}
+      </p>
 
       <section className="panel">
         <label htmlFor="addrs">Addresses (qor1… or 0x…, one per line)</label>
@@ -287,13 +353,14 @@ export function App() {
           {EXAMPLES[netName].length > 0 && (
             <button
               type="button"
-              className="link"
+              className="example"
+              disabled={scanning}
               onClick={() => {
                 setText(EXAMPLES[netName].join("\n"));
                 void runScan(EXAMPLES[netName]);
               }}
             >
-              Try examples
+              Try examples (F, D, A)
             </button>
           )}
         </div>
@@ -308,8 +375,8 @@ export function App() {
         </p>
       )}
       <div className="results">
-        {rows.map((r, i) => (
-          <ResultCard key={i} r={r} />
+        {(scanning ? inputs : rows.map((r) => (isScanResult(r) ? r.address.qor : r.input))).map((input, i) => (
+          <ResultCard key={i} r={rows[i]} input={input} />
         ))}
       </div>
 
@@ -321,7 +388,14 @@ export function App() {
             secp256k1 key and your ML-DSA-87 key: 0.000001 QOR to yourself, plus the network fee. If your key is not
             registered yet, QoreX registers it first in the same approval.
           </p>
-          {qorex === "missing" && <p className="note">Install the QoreX extension to attest. Scanning works without it.</p>}
+          {qorex === "missing" && (
+            <p className="note">
+              <a href={QOREX_INSTALL} target="_blank" rel="noreferrer">
+                Install the QoreX extension
+              </a>{" "}
+              to attest. Scanning and verifying work without it.
+            </p>
+          )}
           {qorex === "outdated" && <p className="note">Update QoreX: this build cannot send native transactions.</p>}
           <button type="button" className="primary" disabled={qorex !== "ready" || Boolean(attestStep)} onClick={attest}>
             Attest with QoreX
@@ -350,6 +424,18 @@ export function App() {
               {verifying ? "Checking…" : "Verify"}
             </button>
           </form>
+          {EXAMPLE_TX[netName] && !verified && !verifying && (
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setTxInput(EXAMPLE_TX[netName]);
+                void runVerify(EXAMPLE_TX[netName]);
+              }}
+            >
+              Verify an example attestation
+            </button>
+          )}
           {verifyError && <p className="error">{verifyError}</p>}
           {verified && <VerifyResult v={verified} net={net} />}
         </div>
@@ -363,8 +449,23 @@ export function App() {
           windows, EIP-7702 delegations and extra authenticators add exposure. Reads are public chain data; nothing
           is stored.
         </p>
-        <p>
-          Command line: <code>npx tsx src/cli/qday.ts scan &lt;address&gt;</code> · MIT licence
+        <p className="links">
+          <a href={REPO} target="_blank" rel="noreferrer">
+            Source on GitHub
+          </a>
+          {" · "}
+          <a href={`${REPO}#command-line`} target="_blank" rel="noreferrer">
+            qday command line
+          </a>{" "}
+          (batch scans, exits 1 on a critical finding for CI)
+          {" · "}
+          <a href={FEST_PAGE} target="_blank" rel="noreferrer">
+            Build Before Q-Day project page
+          </a>
+          {" · "}
+          <a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">
+            MIT licence
+          </a>
         </p>
       </footer>
     </div>

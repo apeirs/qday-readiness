@@ -113,3 +113,19 @@ button.link { border: none; background: none; color: var(--accent); padding: 0; 
 .verify a { color: var(--accent); }
 .foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); padding-top: 12px; }
 .muted { color: var(--muted); }
+.steps { display: grid; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; counter-reset: step; font-size: 14px; color: var(--muted); }
+.steps li { counter-increment: step; }
+.steps li::before {
+  content: counter(step); display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px;
+  border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700;
+}
+.steps strong { color: var(--text); }
+.policy { margin: -6px 0 16px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+.policy .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--low); flex: none; }
+.policy-weak .dot { background: var(--med); }
+button.example { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.card-pending { border-style: dashed; }
+.card-pending p { margin: 6px 0 0; }
+.panel.two button.link { margin-top: 8px; font-size: 14px; }
+.note a, .foot a { color: var(--accent); }
+.facts code { font-size: 13px; }

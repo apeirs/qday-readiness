@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { splitAddresses } from "../core/addr";
 import { buildMemo, verifyAttestation } from "../core/attest";
-import { formatScan, toJson } from "../core/format";
+import { describePolicy, formatScan, toJson } from "../core/format";
 import { networkByName, type Network } from "../core/networks";
 import { formatQor, isScanResult, scanAddress, scanMany } from "../core/scan";
 import { attestWithKey, loadKey, offlineSelfTest } from "./signer";
@@ -61,7 +61,9 @@ async function cmdScan(a: Args, net: Network) {
   if (a.flags.json) {
     console.log(JSON.stringify(toJson(results), null, 2));
   } else {
-    console.log(`Q-Day readiness · ${net.chainId} · ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC\n`);
+    console.log(`Q-Day readiness · ${net.chainId} · ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`);
+    const policy = results.find((r) => isScanResult(r) && r.policy);
+    console.log(policy && isScanResult(policy) && policy.policy ? `Network policy: ${describePolicy(policy.policy)}\n` : "Network policy: could not be read\n");
     for (const r of results) console.log(isScanResult(r) ? formatScan(r) : `${r.input}\n  ERROR  ${r.error}`, "\n");
     const ok = results.filter(isScanResult);
     if (ok.length > 1) {

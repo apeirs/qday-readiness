@@ -1,6 +1,7 @@
 # Q-Day Readiness Audit
 
 [![Built on QoreChain](https://build.qorechain.io/badge/q-day-readiness-audit.svg)](https://build.qorechain.io/p/q-day-readiness-audit)
+[![CI](https://github.com/apeirs/qday-readiness/actions/workflows/ci.yml/badge.svg)](https://github.com/apeirs/qday-readiness/actions/workflows/ci.yml)
 
 Which QoreChain accounts would a quantum attacker take first? This tool scans any `qor1…` or `0x…` address on
 QoreChain, scores how exposed it is, tells you the one thing to fix, and lets you prove your own account is
@@ -18,6 +19,18 @@ and scripted attestations. Testnet (Diana, chain 9800) is the default; mainnet (
 
 Try it: [scan three example testnet accounts](https://qday-readiness.apeir.workers.dev/?a=qor1p2pkkdjkg3486c87skry656ys5wharvz9hwkxm,qor1ll7hhj8eskhxgsr2f6me6v0yu8du8yn5knmwxq,qor1llpx02e33279fz3dr3wf2kja47tx06h9kgjxj3)
 or [verify our attestation](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8).
+Both are also one click on the page: "Try examples (F, D, A)" and "Verify an example attestation".
+
+## Quantum Pass requirements: where to find each one
+
+| Requirement | Evidence |
+|---|---|
+| Use create-qorechain-dapp | Scaffold commit [`7d74390`](https://github.com/apeirs/qday-readiness/commit/7d74390) (create-qorechain-dapp 0.13.0, viem + wagmi template); `src/main.tsx`, `src/wagmi.ts` and the Vite setup come from it |
+| Connect QoreX | RainbowKit + `@qorechain/qorex-rainbowkit` for the EVM lane, `@qorechain/qorex-types` for the native lane ("Scan my wallet", "Attest with QoreX"): [`src/qorex.ts`](src/qorex.ts) |
+| Deploy on testnet | Everything runs against `qorechain-diana`: the hosted app at https://qday-readiness.apeir.workers.dev, the ML-DSA-87 key registration and both attestations below |
+| One hybrid-signed transaction | Two: [`6B8EED3E…`](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) (web app) and [`3DC0994B…`](https://qday-readiness.apeir.workers.dev/?tx=3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) (CLI), each verified in the app with QoreSign |
+| Repo, README, MIT licence, featured image, video <= 3 min, testnet address | This repo, [LICENSE](LICENSE), [docs/featured.png](docs/featured.png), [qday-demo.mp4 (2:48)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4), `qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m` |
+| Credits for kits and libraries | [Built with](#built-with) |
 
 ## On QoreChain testnet
 
@@ -67,9 +80,14 @@ the owner out for good. The fix is cheap and one-time, but you have to know whic
 | Open EVM authorisation window | `qorechain/pqc/v1/evm_window` | -5 if scoped to targets, -15 if not |
 | EIP-7702 delegation | `eth_getCode` (`0xef0100…`) | -10 (-2 if the delegate has no code) |
 | Extra authenticators on an abstract account | `qorechain/abstractaccount/v1` | -5 |
+| Registered key is a real ML-DSA-87 key | `qorechain/pqc/v1/account` `public_key` | must be 2,592 bytes (FIPS 204); otherwise **high** (-40). The card shows the size and a SHA-256 fingerprint to compare with your wallet |
+| PQC key bound to the account's own classical key | `ecdsa_pubkey` vs the `cosmos/auth` public key | low (-5) if they differ |
+| The network actually enforces the PQC key | `qorechain/pqc/v1/params` (`hybrid_signature_mode`, `allow_classical_fallback`) | medium (-20) on registered accounts if hybrid signatures are not required or classical-only fallback is on |
 | Contracts and module accounts | `eth_getCode`, account type | not scored: no key to protect |
 
-Readiness is 100 minus exposure. Grades: A ≥ 90, B ≥ 75, C ≥ 50, D ≥ 25, F below. Balances include the fest
+The network policy is read once per scan batch and shown above the scanner (today both Diana and Vladi report
+hybrid signatures **required**, classical-only fallback **off**, ML-DSA-87 at NIST level 5), and the CLI prints it
+on its first line. Readiness is 100 minus exposure. Grades: A ≥ 90, B ≥ 75, C ≥ 50, D ≥ 25, F below. Balances include the fest
 tokens (fUSD, fETH, fBTC), which the chain keeps as `erc20:` bank denoms.
 
 ## The attestation
@@ -87,6 +105,42 @@ registers it first. `Verify` and `qday verify <txhash>` check both signatures wi
 decode the memo. Share a result with `?tx=<hash>`; share a scan with `?a=<addr>,<addr>`.
 
 Fees: about 0.15 QOR the first time (registration plus the attestation), about 0.06 QOR after that.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    UI["React app<br/>src/App.tsx"]
+    QX["QoreX wallet<br/>(native + EVM lanes)"]
+  end
+  CLI["qday CLI<br/>src/cli/qday.ts"]
+  CORE["Shared core<br/>src/core: scan, attest, addr, format"]
+  GW["Read-only gateway<br/>worker/index.mjs (Cloudflare)<br/>gateway.mjs (Vite / Node)"]
+  REST["qorechain-diana REST + RPC<br/>auth, bank, staking, tx,<br/>pqc/v1, abstractaccount/v1"]
+  EVM["EVM JSON-RPC<br/>eth_getCode (EIP-7702)"]
+  UI --> CORE
+  CLI --> CORE
+  UI -- "sign hybrid tx" --> QX
+  QX -- "broadcast (testnet, SYNC)" --> GW
+  CORE -- "GET /chain/&lt;net&gt;/..." --> GW
+  GW --> REST
+  CORE --> EVM
+  CLI -- "direct, no CORS needed" --> REST
+```
+
+| Path | What it does |
+|---|---|
+| `src/core/scan.ts` | Reads chain state, `assess()` turns it into findings, exposure and grade (pure, unit-tested) |
+| `src/core/attest.ts` | Builds the `qday:v1` memo; verifies a tx's secp256k1 + ML-DSA-87 signatures with QoreSign |
+| `src/core/addr.ts` | `qor1` <-> `0x` conversion and input parsing |
+| `src/App.tsx`, `src/qorex.ts` | Web app; QoreX connect, key registration + attestation through the wallet |
+| `src/cli/qday.ts`, `src/cli/signer.ts` | CLI; key files (0600), `ensurePqcRegistered` + hybrid `MsgSend` with `@qorechain/sdk` |
+| `worker/index.mjs`, `gateway.mjs` | Same-origin gateway: GET allowlist, path-trick refusals, one testnet broadcast route |
+| `test/` | Scoring, key and policy checks, memo, address parsing, gateway and Worker behaviour |
+
+Nothing is stored server-side: the Worker has no KV, database or secrets, and the app keeps state only in the URL
+(`?a=` for scans, `?tx=` for attestations).
 
 ## Run the web app
 
@@ -146,6 +200,9 @@ npm test         # scoring, address parsing, memo format, gateway allowlist + Wo
 npm run build    # type-check and production build
 ```
 
+[GitHub Actions](.github/workflows/ci.yml) runs the tests, the build, the secret check and a Worker dry-run bundle on
+every push, plus `qday scan` on our own testnet account as an example of the CLI used as a CI gate.
+
 ## Not the QoreX "Q-Day Scanner"
 
 The QoreX mobile wallet has a built-in Q-Day Scanner for the wallet's own accounts. This tool is separate: it
@@ -154,10 +211,24 @@ contract's owner), works in batches from the command line, and records a verifia
 
 ## Built with
 
-The [create-qorechain-dapp](https://www.npmjs.com/package/create-qorechain-dapp) viem + wagmi template,
-`@qorechain/sdk` (hybrid signing, PQC registration), `@qorechain/qoresign` (signature verification),
-`@qorechain/qorex-types` and `@qorechain/qorex-rainbowkit` (QoreX), and `@qorechain/qorex-wallet-mock` for
-browser tests.
+QoreChain kits and template:
+
+- [create-qorechain-dapp](https://www.npmjs.com/package/create-qorechain-dapp) 0.13.0, viem + wagmi template (scaffold)
+- [`@qorechain/sdk`](https://www.npmjs.com/package/@qorechain/sdk): hybrid signing, `ensurePqcRegistered`
+- [`@qorechain/evm`](https://www.npmjs.com/package/@qorechain/evm): `qor1` / `0x` address conversion
+- [`@qorechain/qoresign`](https://www.npmjs.com/package/@qorechain/qoresign): secp256k1 + ML-DSA-87 signature verification
+- [`@qorechain/qorex-types`](https://www.npmjs.com/package/@qorechain/qorex-types) and
+  [`@qorechain/qorex-rainbowkit`](https://www.npmjs.com/package/@qorechain/qorex-rainbowkit): QoreX
+- [`@qorechain/qorex-wallet-mock`](https://www.npmjs.com/package/@qorechain/qorex-wallet-mock): QoreX provider for browser tests
+
+Open source libraries:
+[React](https://react.dev) (MIT), [Vite](https://vite.dev) and `@vitejs/plugin-react` (MIT),
+[wagmi](https://wagmi.sh) and [viem](https://viem.sh) (MIT), [RainbowKit](https://rainbowkit.com) (MIT),
+[TanStack Query](https://tanstack.com/query) (MIT), [CosmJS](https://github.com/cosmos/cosmjs)
+(`@cosmjs/stargate`, `proto-signing`, `encoding`; Apache-2.0), [cosmjs-types](https://github.com/confio/cosmjs-types)
+(Apache-2.0), [TypeScript](https://www.typescriptlang.org) (Apache-2.0), [tsx](https://github.com/privatenumber/tsx)
+(MIT), [Wrangler](https://github.com/cloudflare/workers-sdk) (MIT OR Apache-2.0) and Cloudflare Workers for hosting,
+[Playwright](https://playwright.dev) (Apache-2.0) for the browser tests.
 
 ## Licence
 

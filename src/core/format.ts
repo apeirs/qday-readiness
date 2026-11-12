@@ -1,4 +1,4 @@
-import { formatQor, type ScanResult } from "./scan";
+import { enforcesHybrid, formatQor, type NetworkPolicy, type ScanResult } from "./scan";
 
 const useColor = typeof process !== "undefined" && process.stdout?.isTTY && !process.env.NO_COLOR;
 const c = (code: number, s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -31,6 +31,7 @@ export function formatScan(r: ScanResult): string {
   if (r.kind !== "unseen") facts.push(`holds ${formatQor(r.liquidUqor)}${r.stakedUqor > 0n ? ` + ${formatQor(r.stakedUqor)} staked` : ""}`);
   for (const t of r.otherBalances) facts.push(`${t.amount} ${t.symbol}`);
   facts.push(r.pqc ? `PQC key: ${r.pqc.algorithm}` : "PQC key: none");
+  if (r.pqc?.publicKeyBytes) facts.push(`${r.pqc.publicKeyBytes.toLocaleString("en-US")}-byte key${r.pqc.fingerprint ? ` sha256:${r.pqc.fingerprint}` : ""}`);
   facts.push(r.classicalPubkeyOnChain ? `classical key on chain (${r.classicalKeyType})` : "classical key not on chain");
   out.push("  " + c(90, facts.join(" · ")));
   for (const f of r.findings) {
@@ -44,4 +45,9 @@ export function formatScan(r: ScanResult): string {
 /** JSON-safe copy (bigints as strings). */
 export function toJson(r: unknown): unknown {
   return JSON.parse(JSON.stringify(r, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+}
+
+/** One line on what the chain enforces, e.g. "hybrid signatures required · classical-only fallback off · ML-DSA-87, level 5". */
+export function describePolicy(p: NetworkPolicy): string {
+  return `hybrid signatures ${p.hybridMode} · classical-only fallback ${p.classicalFallback ? "on" : "off"} · ${p.defaultAlgorithm}, level ${p.minSecurityLevel}${enforcesHybrid(p) ? "" : " · a registered key is NOT enforced"}`;
 }

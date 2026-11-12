@@ -22,7 +22,26 @@ export interface PqcKeyInfo {
   classicalKeySource: string;
   possessionProven: boolean;
   migrationPending: boolean;
+  /** Size of the registered public key; ML-DSA-87 keys are 2,592 bytes (FIPS 204). */
+  publicKeyBytes?: number;
+  /** First 16 hex of the SHA-256 of the registered public key, to compare with the wallet's own. */
+  fingerprint?: string;
+  /** Whether the classical key bound at registration is the account's own on-chain key. */
+  classicalBinding?: "matches" | "differs" | "unknown";
 }
+
+/** The chain's PQC enforcement (qorechain/pqc/v1/params): a registered key only helps if it is required. */
+export interface NetworkPolicy {
+  /** "required", "optional" or "disabled". */
+  hybridMode: string;
+  /** Classical-only signatures still accepted. */
+  classicalFallback: boolean;
+  minSecurityLevel: number;
+  defaultAlgorithm: string;
+}
+
+/** ML-DSA-87 public key size in bytes (FIPS 204, security category 5). */
+export const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
 
 export interface EvmWindowInfo {
   live: boolean;
@@ -62,6 +81,8 @@ export interface ScanResult {
   verdict: string;
   findings: Finding[];
   /** Calls that failed; the result is then partial and says so. */
+  /** The network's PQC enforcement when it could be read. */
+  policy?: NetworkPolicy;
   warnings: string[];
 }
 
@@ -117,7 +138,52 @@ export interface Raw {
   aaRules?: Json[];
   code?: string;
   delegateHasCode?: boolean;
+  /** qorechain/pqc/v1/params `params`. */
+  policy?: Json | null;
+  /** First 16 hex of the SHA-256 of the registered PQC public key. */
+  pqcKeyDigest?: string;
   warnings: string[];
+}
+
+export function parsePolicy(p: Json | null | undefined): NetworkPolicy | undefined {
+  if (!p || typeof p !== "object") return undefined;
+  const mode = String(p.hybrid_signature_mode_name ?? p.hybrid_signature_mode ?? "unknown").toLowerCase();
+  return {
+    hybridMode: mode === "2" ? "required" : mode === "1" ? "optional" : mode === "0" ? "disabled" : mode,
+    classicalFallback: Boolean(p.allow_classical_fallback),
+    minSecurityLevel: Number(p.min_security_level ?? 0),
+    defaultAlgorithm: p.default_signature_algo_name === "dilithium5" ? "ML-DSA-87" : String(p.default_signature_algo_name ?? "unknown"),
+  };
+}
+
+/** True when the chain rejects a native transaction that carries only the classical signature. */
+export const enforcesHybrid = (p: NetworkPolicy) => p.hybridMode === "required" && !p.classicalFallback;
+
+const policyCache = new Map<string, { at: number; value: Promise<Json | null> }>();
+
+/** The network's PQC params, read once a minute at most (every scan in a batch shares one read). */
+export function fetchPolicyRaw(net: Network, http: HttpOptions = {}): Promise<Json | null> {
+  const hit = policyCache.get(net.rest);
+  if (hit && Date.now() - hit.at < 60_000) return hit.value;
+  const value = getJson<Json>(net.rest, "/qorechain/pqc/v1/params", http).then((r) => {
+    if (r.status !== 200 || !r.json?.params) throw new Error(`HTTP ${r.status}`);
+    return r.json.params as Json;
+  });
+  value.catch(() => policyCache.delete(net.rest));
+  policyCache.set(net.rest, { at: Date.now(), value });
+  return value;
+}
+
+export async function fetchPolicy(net: Network, http: HttpOptions = {}): Promise<NetworkPolicy | undefined> {
+  return parsePolicy(await fetchPolicyRaw(net, http));
+}
+
+const b64Bytes = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+const b64Length = (s: string) => Math.floor((s.length * 3) / 4) - (s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0);
+
+async function sha256Hex16(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const d = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(d.slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function fetchRaw(addr: ParsedAddress, net: Network, http: HttpOptions): Promise<Raw> {
@@ -147,6 +213,10 @@ async function fetchRaw(addr: ParsedAddress, net: Network, http: HttpOptions): P
     attempt("pqc", async () => {
       const j = okOrNull("pqc", await getJson<Json>(rest, `/qorechain/pqc/v1/account/${q}`, http));
       raw.pqc = j?.found ? j.account : null;
+      if (typeof raw.pqc?.public_key === "string" && raw.pqc.public_key) raw.pqcKeyDigest = await sha256Hex16(b64Bytes(raw.pqc.public_key));
+    }),
+    attempt("network policy", async () => {
+      raw.policy = await fetchPolicyRaw(net, http);
     }),
     attempt("evm window", async () => {
       const j = okOrNull("evm window", await getJson<Json>(rest, `/qorechain/pqc/v1/evm_window/${q}`, http));
@@ -198,6 +268,7 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
   ];
   const stakedUqor = (raw.delegations ?? []).reduce((s, d) => s + BigInt(d?.balance?.amount ?? "0"), 0n);
   const valueUqor = liquidUqor + stakedUqor;
+  const policy = parsePolicy(raw.policy);
   const hasValue = valueUqor > 0n || otherBalances.length > 0;
   // EIP-7702: an account's code is `0xef0100 ‖ delegate` while delegated; that is still a keyed account.
   const code = (raw.code ?? "0x").toLowerCase();
@@ -218,6 +289,10 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
       classicalKeySource: String(raw.pqc.classical_key_source ?? "none"),
       possessionProven: Boolean(raw.pqc.possession_proven),
       migrationPending: Boolean(raw.pqc.migration_public_key),
+      publicKeyBytes: typeof raw.pqc.public_key === "string" && raw.pqc.public_key ? b64Length(raw.pqc.public_key) : undefined,
+      fingerprint: raw.pqcKeyDigest,
+      classicalBinding:
+        raw.pqc.ecdsa_pubkey && pubKey?.key ? (raw.pqc.ecdsa_pubkey === pubKey.key ? "matches" : "differs") : "unknown",
     };
   }
 
@@ -291,8 +366,46 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
       severity: "info",
       points: 0,
       title: `${pqc.algorithm} key registered (${pqc.keyType})`,
-      detail: `Registered at block ${pqc.registeredAtHeight.toLocaleString("en-US")}. Native transactions from this account must carry a valid ML-DSA-87 signature next to the classical one.`,
+      detail:
+        `Registered at block ${pqc.registeredAtHeight.toLocaleString("en-US")}` +
+        (pqc.publicKeyBytes ? `; public key ${pqc.publicKeyBytes.toLocaleString("en-US")} bytes` : "") +
+        (pqc.fingerprint ? `, SHA-256 \`${pqc.fingerprint}\`` : "") +
+        (pqc.classicalBinding === "matches" ? `, bound to this account's own ${classicalKeyType ?? "classical"} key` : "") +
+        ". " +
+        (policy && !enforcesHybrid(policy)
+          ? "The network does not require it yet (see below)."
+          : "Native transactions from this account must carry a valid ML-DSA-87 signature next to the classical one."),
     });
+    if (pqc.publicKeyBytes !== undefined && /dilithium5|ML-DSA-87/i.test(pqc.algorithm) && pqc.publicKeyBytes !== ML_DSA_87_PUBLIC_KEY_BYTES) {
+      add({
+        id: "pqc-key-size",
+        severity: "high",
+        points: 40,
+        title: "Registered key is not the size of an ML-DSA-87 public key",
+        detail: `The registered key is ${pqc.publicKeyBytes.toLocaleString("en-US")} bytes; an ML-DSA-87 public key is ${ML_DSA_87_PUBLIC_KEY_BYTES.toLocaleString("en-US")} (FIPS 204). A key that cannot verify signatures locks the account rather than protecting it.`,
+        fix: "Rotate to a fresh ML-DSA-87 key from QoreX or `@qorechain/sdk` while the classical key still controls the account.",
+      });
+    }
+    if (pqc.classicalBinding === "differs") {
+      add({
+        id: "pqc-classical-mismatch",
+        severity: "low",
+        points: 5,
+        title: "Post-quantum key bound to a different classical key",
+        detail: "The secp256k1 key recorded with the ML-DSA-87 registration is not the public key the account shows on chain. Hybrid checks pair the two, so make sure the pair you sign with is the registered one.",
+        fix: "Compare the key in your wallet with the registration; rotate the PQC key if they do not belong together.",
+      });
+    }
+    if (policy && !enforcesHybrid(policy)) {
+      add({
+        id: "network-not-enforcing",
+        severity: "medium",
+        points: 20,
+        title: `${net.chainId} does not require the ML-DSA-87 signature`,
+        detail: `Network policy: hybrid signatures ${policy.hybridMode}, classical-only fallback ${policy.classicalFallback ? "on" : "off"}. A transaction signed with the ECDSA key alone is still accepted, so the registered key does not stop an attacker who derives that key.`,
+        fix: "Nothing to change on the account: keep the key registered and watch qorechain/pqc/v1/params for hybrid mode \"required\".",
+      });
+    }
     if (!pqc.possessionProven) {
       add({
         id: "no-possession-proof",
@@ -401,6 +514,7 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
     classicalPubkeyOnChain: Boolean(pubKey),
     sequence,
     pqc,
+    policy,
     evmWindow,
     liquidUqor,
     stakedUqor,
@@ -427,7 +541,7 @@ export async function scanMany(
   inputs: string[],
   net: Network,
   http: HttpOptions = {},
-  onResult?: (r: ScanResult | { input: string; error: string }) => void,
+  onResult?: (r: ScanResult | { input: string; error: string }, index: number) => void,
 ): Promise<(ScanResult | { input: string; error: string })[]> {
   const out: (ScanResult | { input: string; error: string })[] = new Array(inputs.length);
   let next = 0;
@@ -439,15 +553,16 @@ export async function scanMany(
       } catch (err) {
         out[i] = { input: inputs[i], error: err instanceof Error ? err.message : String(err) };
       }
-      onResult?.(out[i]);
+      onResult?.(out[i], i);
     }
   };
   await Promise.all(Array.from({ length: Math.min(3, inputs.length) }, worker));
   return out;
 }
 
-export function isScanResult(r: ScanResult | { input: string; error: string }): r is ScanResult {
-  return (r as ScanResult).findings !== undefined;
+// Tolerates the empty slots a progressive scan leaves while results arrive out of order.
+export function isScanResult(r: ScanResult | { input: string; error: string } | undefined | null): r is ScanResult {
+  return r != null && (r as ScanResult).findings !== undefined;
 }
 
 /**

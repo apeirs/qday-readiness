@@ -1,0 +1,72 @@
+// Cloudflare Worker: serves the built app (dist/, via Workers Static Assets) and the same
+// read-only chain gateway as gateway.mjs, on one origin. GET only, same allowlist (shared code).
+//   npx wrangler dev        local, http://127.0.0.1:8787
+//   ./deploy.sh             test + build + deploy
+import { upstreamFor } from "../gateway.mjs";
+
+const TIMEOUT_MS = 15_000;
+// Seconds to cache a 200. Transactions never change once found; account state does.
+const TTL_TX = 86_400;
+const TTL_STATE = 15;
+const TX_PATH = /^https:\/\/[^/]+\/(cosmos\/tx\/v1beta1\/txs\/[0-9A-Fa-f]{64}$|tx\?hash=)/;
+
+const json = (status, body, extra = {}) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff", ...extra },
+  });
+
+/** Seconds a successful upstream answer may be cached for. */
+export function ttlFor(target) {
+  return TX_PATH.test(target) ? TTL_TX : TTL_STATE;
+}
+
+export async function handleChain(request, ctx) {
+  if (request.method !== "GET") return json(405, { error: "read-only gateway: GET only" }, { allow: "GET" });
+  // request.url is already parsed by the runtime (dot segments resolved); upstreamFor checks
+  // exactly the path that gets forwarded, so nothing can normalise past it upstream.
+  const url = new URL(request.url);
+  const target = upstreamFor(url.pathname + url.search);
+  if (!target) return json(404, { error: "not served by this gateway" });
+
+  const cache = globalThis.caches?.default;
+  const key = new Request(target);
+  const hit = cache && (await cache.match(key).catch(() => undefined));
+  if (hit) {
+    const r = new Response(hit.body, hit);
+    r.headers.set("x-qday-cache", "HIT");
+    return r;
+  }
+
+  let up;
+  try {
+    up = await fetch(target, {
+      headers: { accept: "application/json", "user-agent": "qday-gateway/1" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      redirect: "manual",
+    });
+  } catch (err) {
+    const why = err?.name === "TimeoutError" || err?.name === "AbortError" ? "timeout" : String(err?.message ?? err);
+    return json(502, { error: `upstream unreachable: ${why}` });
+  }
+  if (up.status >= 300 && up.status < 400) return json(502, { error: "upstream redirected" });
+
+  const ttl = up.status === 200 ? ttlFor(target) : 0;
+  const headers = {
+    "content-type": up.headers.get("content-type") ?? "application/json",
+    "cache-control": ttl ? `public, max-age=${ttl}` : "no-store",
+    "x-content-type-options": "nosniff",
+    "x-qday-cache": "MISS",
+  };
+  const res = new Response(up.body, { status: up.status, headers });
+  if (ttl && cache) ctx?.waitUntil?.(cache.put(key, res.clone()).catch(() => {}));
+  return res;
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const { pathname } = new URL(request.url);
+    if (pathname === "/chain" || pathname.startsWith("/chain/")) return handleChain(request, ctx);
+    return env.ASSETS.fetch(request);
+  },
+};

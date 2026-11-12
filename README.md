@@ -61,6 +61,25 @@ forwards GET requests on an allowlist (`cosmos/auth|bank|staking|tx|upgrade`, `q
 RPC `/tx` and `/status`) and nothing else. The EVM JSON-RPC allows CORS and is called directly. Nothing is
 stored. Transactions never pass through the gateway: QoreX signs and broadcasts them itself.
 
+## Deploy
+
+The hosted demo is one Cloudflare Worker: Workers Static Assets serve the built app, and `worker/index.mjs`
+runs the same read-only gateway at `/chain/<network>/…` (same allowlist code as `gateway.mjs`, GET only,
+redirects refused, 15 s upstream timeout). Nothing else is created: no KV, database or secrets.
+
+```sh
+npx wrangler login     # once (or export CLOUDFLARE_API_TOKEN with "Workers Scripts: Edit" + CLOUDFLARE_ACCOUNT_ID)
+./deploy.sh            # tests, build, secret check, then `wrangler deploy` -> https://qday-readiness.<account>.workers.dev
+./deploy.sh --dry-run  # same checks, bundles the Worker, uploads nothing
+npm run cf:dev         # the Worker locally on http://127.0.0.1:8787 (after `npm run build`)
+```
+
+`scripts/check-secrets.sh` runs before every deploy and stops it if a key file, mnemonic or credential could be in
+`dist/` or in the tracked files. Successful chain reads are cached at the edge for 15 s (account state) or a day
+(committed transactions); errors and "not found" answers are never cached. Static files under `/assets/` are
+content-hashed and cached for a year (`public/_headers`). To self-host instead, `npm run build && npm start` runs
+the same app and gateway with Node and no dependencies.
+
 ## Command line
 
 ```sh
@@ -80,7 +99,7 @@ Key files that other users can read are refused.
 ## Tests
 
 ```sh
-npm test         # scoring, address parsing, memo format, gateway allowlist
+npm test         # scoring, address parsing, memo format, gateway allowlist + Worker (path tricks, methods, cache)
 npm run build    # type-check and production build
 ```
 

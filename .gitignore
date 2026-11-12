@@ -4,3 +4,5 @@ dist/
 *.key
 keys/
 *.secret*
+.wrangler/
+.dev.vars*

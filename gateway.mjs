@@ -9,6 +9,7 @@ export const UPSTREAMS = {
 
 const REST_ALLOW = /^\/(cosmos\/(auth|bank|staking|tx|upgrade)\/v1beta1\/|qorechain\/(pqc|abstractaccount)\/v1\/)/;
 const RPC_ALLOW = /^\/(tx|status)(\?|$)/;
+const SAFE_PATH = /^[A-Za-z0-9_\-./]*$/;
 const PREFIX = /^\/chain\/(testnet|mainnet)\/(rest|rpc)(\/.*)$/;
 
 /** Map `/chain/<net>/<kind>/<path>` to an upstream URL, or undefined if not allowed. */
@@ -17,8 +18,10 @@ export function upstreamFor(url) {
   if (!m) return undefined;
   const [, net, kind, rest] = m;
   const pathOnly = rest.split("?")[0];
-  // Dot segments or encoded dots/slashes would let the upstream URL normalise past the allowlist.
-  if (/\.\.|%2e|%2f|%5c|\\|\/\//i.test(pathOnly)) return undefined;
+  // The app only reads paths made of bech32/hex ids, so allow nothing else: dot segments, any
+  // percent-escape (%2e, %2f, double-encoded %252e), backslashes or empty segments would let the
+  // upstream URL normalise or decode past the allowlist.
+  if (!SAFE_PATH.test(pathOnly) || /\.\.|\/\//.test(pathOnly)) return undefined;
   if (kind === "rest" && !REST_ALLOW.test(pathOnly)) return undefined;
   if (kind === "rpc" && !RPC_ALLOW.test(rest)) return undefined;
   return UPSTREAMS[net][kind] + rest;

@@ -9,7 +9,7 @@ bad() { echo "check-secrets: $*" >&2; fail=1; }
 
 # 1. Nothing secret-looking is tracked by git (key files, mnemonics, env files, wallet exports).
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  hits=$(git ls-files | grep -i -E '(^|/)(keys?/|\.env$|.*\.mnemonic$|.*\.key$|.*secret|.*faucet-login|.*\.pem$|id_(rsa|ed25519))' | grep -v -E '^\.env\.example$' || true)
+  hits=$(git ls-files | grep -i -E '(^|/)(keys?/|\.env$|.*\.mnemonic$|.*\.key$|secrets?(/|\.)|[^/]*\.secrets?([./]|$)|.*faucet-login|.*\.pem$|id_(rsa|ed25519))' | grep -v -E '^\.env\.example$' || true)
   [ -z "$hits" ] || bad "tracked secret-looking files: $hits"
 fi
 

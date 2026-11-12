@@ -58,14 +58,16 @@ npm run build && npm start   # production build served on http://127.0.0.1:8080 
 QoreChain's REST and Tendermint RPC endpoints send no CORS headers, so the app reads them through a small
 read-only gateway (`gateway.mjs`) that the dev server and `server.mjs` both mount at `/chain/<network>/…`. It
 forwards GET requests on an allowlist (`cosmos/auth|bank|staking|tx|upgrade`, `qorechain/pqc|abstractaccount`,
-RPC `/tx` and `/status`) and nothing else. The EVM JSON-RPC allows CORS and is called directly. Nothing is
-stored. Transactions never pass through the gateway: QoreX signs and broadcasts them itself.
+RPC `/tx` and `/status`), plus one write route: `POST /chain/testnet/rest/cosmos/tx/v1beta1/txs` for wallets that
+broadcast through the page's REST endpoint. That route takes only a JSON body of at most 64 KB holding `tx_bytes`
+and `mode: BROADCAST_MODE_SYNC`, relays it to testnet and passes the chain's answer back unchanged; the body is
+never logged or stored. Every other write is refused (405). The EVM JSON-RPC allows CORS and is called directly.
 
 ## Deploy
 
 The hosted demo is one Cloudflare Worker: Workers Static Assets serve the built app, and `worker/index.mjs`
-runs the same read-only gateway at `/chain/<network>/…` (same allowlist code as `gateway.mjs`, GET only,
-redirects refused, 15 s upstream timeout). Nothing else is created: no KV, database or secrets.
+runs the same gateway at `/chain/<network>/…` (same allowlist and broadcast checks as `gateway.mjs`, redirects
+refused, 15 s upstream timeout). Nothing else is created: no KV, database or secrets.
 
 ```sh
 npx wrangler login     # once (or export CLOUDFLARE_API_TOKEN with "Workers Scripts: Edit" + CLOUDFLARE_ACCOUNT_ID)
@@ -99,7 +101,7 @@ Key files that other users can read are refused.
 ## Tests
 
 ```sh
-npm test         # scoring, address parsing, memo format, gateway allowlist + Worker (path tricks, methods, cache)
+npm test         # scoring, address parsing, memo format, gateway allowlist + Worker (path tricks, methods, broadcast route, cache)
 npm run build    # type-check and production build
 ```
 

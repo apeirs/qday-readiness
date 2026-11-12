@@ -1,5 +1,6 @@
 import { inspectTransaction, type InspectedTransaction } from "@qorechain/qoresign/network";
 import type { Network } from "./networks";
+import { readRegistry, registryCheck } from "./registry";
 import type { ScanResult } from "./scan";
 
 /**
@@ -71,7 +72,8 @@ export interface VerifiedAttestation {
 /**
  * Read a committed transaction and check it independently with QoreSign: the
  * classical signature, the ML-DSA-87 layer against the key the signer has
- * registered, and the attestation memo.
+ * registered, and the attestation memo; then, where a QDayRegistry is deployed, whether the
+ * contract holds this attestation (it re-checks the signature on chain before recording one).
  */
 export async function verifyAttestation(txhash: string, net: Network, fetchImpl?: typeof fetch): Promise<VerifiedAttestation | undefined> {
   const hash = txhash.trim().replace(/^0x/i, "").toUpperCase();
@@ -110,5 +112,13 @@ export async function verifyAttestation(txhash: string, net: Network, fetchImpl?
       detail: memo ? `${memo.subject} graded ${memo.grade} (${memo.readiness}/100), scan ${memo.digest}` : "not a qday:v1 memo",
     },
   ];
+  // The on-chain record, when this network has a QDayRegistry and the memo names the signer.
+  if (net.registry && memo && tx.code === 0 && tx.signer?.address === memo.subject) {
+    try {
+      checks.push(registryCheck(net, hash, tx.signer.sequence, memo, await readRegistry(net, memo.subject, fetchImpl ?? fetch)));
+    } catch (e) {
+      checks.push({ label: "Recorded in QDayRegistry", ok: undefined, detail: `could not read the contract: ${(e as Error).message}` });
+    }
+  }
   return { tx, memo, hybridVerified: tx.code === 0 && pq.present && pq.verified === true, checks };
 }

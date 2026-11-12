@@ -11,12 +11,14 @@ import {
   createClient,
   deriveNativeAccount,
   derivePqcCanonical,
+  deriveUnifiedAccount,
   directSignerFromPrivateKey,
   ensurePqcRegistered,
   pqcVerify,
   qorToEvm,
   validateMnemonic,
   type PqcKeypair,
+  type UnifiedAccount,
 } from "@qorechain/sdk";
 import { attestationMsg, buildMemo } from "../core/attest";
 import { getJson } from "../core/http";
@@ -31,14 +33,19 @@ export interface LoadedKey {
 }
 
 /** Fees on Diana: MsgRegisterPQCKeyV2 needs ~600k gas, a hybrid MsgSend ~300k, at 0.1-0.15 uqor/gas. */
-const REGISTER_FEE_UQOR = 90_000n;
+export const REGISTER_FEE_UQOR = 90_000n;
 const SEND_FEE_UQOR = 60_000n;
 
-export async function loadKey(file: string): Promise<LoadedKey> {
+function readMnemonic(file: string): string {
   const st = statSync(file);
   if ((st.mode & 0o077) !== 0) throw new Error(`${file} is readable by others; run chmod 600 on it.`);
   const mnemonic = readFileSync(file, "utf8").trim().split(/\s+/).join(" ");
   if (!validateMnemonic(mnemonic)) throw new Error(`${file} does not hold a valid BIP-39 mnemonic.`);
+  return mnemonic;
+}
+
+export async function loadKey(file: string): Promise<LoadedKey> {
+  const mnemonic = readMnemonic(file);
   const acct = await deriveNativeAccount(mnemonic);
   return {
     address: acct.address,
@@ -48,7 +55,16 @@ export async function loadKey(file: string): Promise<LoadedKey> {
   };
 }
 
-function sdkClient(net: Network) {
+/**
+ * The Ethereum-type (eth_secp256k1, m/44'/60'/0'/0/0) account of the same mnemonic. Its qor1 and 0x
+ * forms are one account, so it can send EVM transactions; the native account above cannot (its
+ * address is not the keccak hash of its key). The CLI uses it only to relay to QDayRegistry.
+ */
+export async function loadRelayer(file: string): Promise<UnifiedAccount> {
+  return deriveUnifiedAccount(readMnemonic(file), 0);
+}
+
+export function sdkClient(net: Network) {
   return createClient({
     network: net.name,
     chainId: net.chainId,

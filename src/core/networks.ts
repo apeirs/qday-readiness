@@ -6,6 +6,12 @@ export interface Network {
   rest: string;
   rpc: string;
   evmRpc?: string;
+  /** QDayRegistry (contracts/contracts/QDayRegistry.sol): the on-chain record of attestations. */
+  registry?: string;
+  /** The EVM transaction that deployed it. */
+  registryDeployTx?: string;
+  /** Explorer base for EVM pages: `${evmExplorer}/address/0x…` and `${evmExplorer}/tx/0x…`. */
+  evmExplorer?: string;
   explorerTx: (hash: string) => string;
   /** The public explorer keeps its network in a cookie, not the URL: tell the reader which one to pick. */
   explorerNote?: string;
@@ -21,6 +27,9 @@ export const NETWORKS: Record<Network["name"], Network> = {
     rest: "https://api-testnet.qore.host",
     rpc: "https://rpc-testnet.qore.host",
     evmRpc: "https://evm-testnet.qore.host",
+    registry: "0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A",
+    registryDeployTx: "0xbf86da9725961930daad2c38e157071b7f746f13b4e3a64ca285312abe3ca999",
+    evmExplorer: "https://explore.qore.network",
     explorerTx: (h) => `https://explore.qore.network/tx/${h}`,
     explorerNote: "switch the explorer's network to Testnet",
     restTx: (h) => `https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/${h}`,

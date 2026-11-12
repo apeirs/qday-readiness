@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit",
     "start": "node server.mjs",
     "qday": "tsx src/cli/qday.ts",
+    "scaffold:contracts": "create-qorechain-dapp contracts --template evm-solidity --network testnet --no-install",
+    "compile:contracts": "npm --prefix contracts run compile",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "cf:dev": "wrangler dev --ip 127.0.0.1",
     "deploy": "./deploy.sh"
@@ -38,6 +40,7 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "create-qorechain-dapp": "0.13.1",
     "tsx": "^4.23.15",
     "typescript": "^5.6.3",
     "vite": "^5.4.0",

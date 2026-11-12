@@ -24,6 +24,11 @@ jobs:
         run: npm test
       - name: Type-check and production build
         run: npm run build
+      - name: QDayRegistry artifact is the compiled contract source (solc 0.8.24)
+        run: |
+          npm ci --prefix contracts --no-audit --no-fund
+          npm run compile:contracts
+          git diff --exit-code contracts/contracts/QDayRegistry.artifact.ts
       - name: No key material in the build or the tracked files
         run: scripts/check-secrets.sh dist
       - name: Bundle the Cloudflare Worker (dry run, nothing uploaded)

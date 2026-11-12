@@ -25,9 +25,9 @@ Both are also one click on the page: "Try examples (F, D, A)" and "Verify an exa
 
 | Requirement | Evidence |
 |---|---|
-| Use create-qorechain-dapp | Scaffold commit [`7d74390`](https://github.com/apeirs/qday-readiness/commit/7d74390) (create-qorechain-dapp 0.13.0, viem + wagmi template); `src/main.tsx`, `src/wagmi.ts` and the Vite setup come from it |
+| Use create-qorechain-dapp | Twice, both runs committed unmodified: the web app ([`7d74390`](https://github.com/apeirs/qday-readiness/commit/7d74390), 0.13.0, viem + wagmi template: `src/main.tsx`, `src/wagmi.ts`, the Vite setup) and [`contracts/`](contracts) ([`fbe93e3`](https://github.com/apeirs/qday-readiness/commit/fbe93e3), 0.13.1, evm-solidity template, which now holds QDayRegistry). `create-qorechain-dapp` is a pinned devDependency in [package.json](package.json); `npm run scaffold:contracts` is the exact command |
 | Connect QoreX | RainbowKit + `@qorechain/qorex-rainbowkit` for the EVM lane, `@qorechain/qorex-types` for the native lane ("Scan my wallet", "Attest with QoreX"): [`src/qorex.ts`](src/qorex.ts) |
-| Deploy on testnet | Everything runs against `qorechain-diana`: the hosted app at https://qday-readiness.apeir.workers.dev, the ML-DSA-87 key registration and both attestations below |
+| Deploy on testnet | Contract **QDayRegistry** at [`0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A`](https://explore.qore.network/address/0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A) on `qorechain-diana` (EVM 9800), deploy tx [`0xbf86da97…`](https://explore.qore.network/tx/0xbf86da9725961930daad2c38e157071b7f746f13b4e3a64ca285312abe3ca999). The app's Verify reads it; both attestations below are recorded in it. Plus the hosted app at https://qday-readiness.apeir.workers.dev |
 | One hybrid-signed transaction | Two: [`6B8EED3E…`](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) (web app) and [`3DC0994B…`](https://qday-readiness.apeir.workers.dev/?tx=3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) (CLI), each verified in the app with QoreSign |
 | Repo, README, MIT licence, featured image, video <= 3 min, testnet address | This repo, [LICENSE](LICENSE), [docs/featured.png](docs/featured.png), [qday-demo.mp4 (2:48)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4), `qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m` |
 | Credits for kits and libraries | [Built with](#built-with) |
@@ -42,10 +42,17 @@ Network: `qorechain-diana` (testnet, chain 9800).
 | Hybrid-signed attestation, web app "Attest with QoreX" (QoreX wallet mock) through the Worker gateway (block 9,934,842) | [`6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8`](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) · [raw JSON](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) |
 | Hybrid-signed attestation, `qday attest` CLI (block 9,934,042) | [`3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B`](https://qday-readiness.apeir.workers.dev/?tx=3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) · [raw JSON](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) |
 | ML-DSA-87 key registration for that address (block 9,934,040) | `CFE50F413E357E7501E0468FE8E6939F87D6D2B807B24FB192DCF5C927B587B3` |
+| **QDayRegistry contract** ([source](contracts/contracts/QDayRegistry.sol), solc 0.8.24) | [`0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A`](https://explore.qore.network/address/0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A) |
+| QDayRegistry deploy tx (EVM block 9,939,292, 1,292,574 gas) | [`0xbf86da9725961930daad2c38e157071b7f746f13b4e3a64ca285312abe3ca999`](https://explore.qore.network/tx/0xbf86da9725961930daad2c38e157071b7f746f13b4e3a64ca285312abe3ca999) |
+| `record()` of the CLI attestation `3DC0994B…` (EVM block 9,939,321) | `0xf14e23ccc924bb408acb8b5aa22d373f11381659be810fad734edf9499674e7e` |
+| `record()` of the web attestation `6B8EED3E…` (EVM block 9,939,327), the latest on record | `0xf2f00a845987222cf57973b6adb42fb6f1585e03156451aa9f23163d3bdddc34` |
+| Relayer that sent them (Ethereum-type account of the same key file) | `qor15r530mn85m37hvzu5cfq7k39ry0e8u40yln0jh` / `0xa0e917Ee67A6e3EBB05ca6120f5A25191F93f2AF` |
 
 Both attestations carry the memo `qday:v1;qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m;A;100;70b31e56bd69` and pass
-all four checks: committed, secp256k1 signature, ML-DSA-87 signature against the registered key (sign-bytes v2),
-and the memo. Re-check either one with `npm run qday -- verify <hash>` or the links above. The QoreChain explorers
+all four signature and memo checks: committed, secp256k1 signature, ML-DSA-87 signature against the registered key
+(sign-bytes v2), and the memo. The fifth row, "Recorded in QDayRegistry", passes for `6B8EED3E…` and shows
+`3DC0994B…` as replaced by that newer one. On chain, `isReady(0xe90f86641db78863b9b5e40bbb1c1ecf6d16ca9a, 90)`
+returns `true`. Re-check either one with `npm run qday -- verify <hash>` or the links above. The QoreChain explorers
 open on mainnet by default: switch them to Testnet to see these transactions.
 
 ## Video and stills
@@ -106,6 +113,33 @@ decode the memo. Share a result with `?tx=<hash>`; share a scan with `?a=<addr>,
 
 Fees: about 0.15 QOR the first time (registration plus the attestation), about 0.06 QOR after that.
 
+## QDayRegistry: the on-chain record
+
+[`contracts/contracts/QDayRegistry.sol`](contracts/contracts/QDayRegistry.sol), deployed on testnet at
+[`0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A`](https://explore.qore.network/address/0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A), keeps each account's latest attestation where contracts
+can read it: `isReady(account, minReadiness)` is a one-line gate for anything that should only serve
+quantum-ready accounts. It trusts no one who relays to it. `record(account, signBytes, pqcSignature, nativeTx)`:
+
+1. reads the account's key from QoreChain's PQC Key Status precompile (`0x…0a02`) and requires a registered
+   ML-DSA-87 key with a proof of possession;
+2. checks the ML-DSA-87 signature over the transaction's hybrid sign-bytes (v2) with the PQC Verify precompile
+   (`0x…0a01`), the same check the chain ran when it accepted the transaction;
+3. parses the sign-bytes itself: the chain id must be `qorechain-diana`, the memo (TxBody field 2) must be a
+   `qday:v1` memo naming this very account in bech32, and the signer's sequence comes from the AuthInfo;
+4. accepts only a newer sequence than the one on record, so an old attestation can't replace a newer one.
+
+So a record exists only if the account's own post-quantum key signed that grade, and anyone can relay it. `isReady`
+also re-checks that the account still holds the same proven key. A wrong signature, a changed byte or another
+account's key reverts (simulated on testnet before the deploy).
+
+Why a relay step: QoreX signs native transactions but has no EVM signing yet, and an account made from a Cosmos
+key (`m/44'/118'`) can't send EVM transactions as itself. So the web app's Attest stays a native transaction, and
+`qday attest` (or `qday record <txhash>` for any account's attestation) relays it from the Ethereum-type account of
+the same key file. Each EVM write first opens a one-transaction EVM window with a hybrid-signed native message,
+limited to the fee it needs and, for a record, to the registry as the only target. The contract lives in the
+`contracts/` package that create-qorechain-dapp scaffolded; `npm run compile:contracts` rebuilds
+`QDayRegistry.artifact.ts` with solc 0.8.24, and CI fails if the committed artifact differs from the source.
+
 ## Architecture
 
 ```mermaid
@@ -118,7 +152,8 @@ flowchart LR
   CORE["Shared core<br/>src/core: scan, attest, addr, format"]
   GW["Read-only gateway<br/>worker/index.mjs (Cloudflare)<br/>gateway.mjs (Vite / Node)"]
   REST["qorechain-diana REST + RPC<br/>auth, bank, staking, tx,<br/>pqc/v1, abstractaccount/v1"]
-  EVM["EVM JSON-RPC<br/>eth_getCode (EIP-7702)"]
+  EVM["EVM JSON-RPC<br/>eth_getCode (EIP-7702),<br/>QDayRegistry reads"]
+  REG["QDayRegistry<br/>(PQC precompiles 0x0a01, 0x0a02)"]
   UI --> CORE
   CLI --> CORE
   UI -- "sign hybrid tx" --> QX
@@ -127,12 +162,17 @@ flowchart LR
   GW --> REST
   CORE --> EVM
   CLI -- "direct, no CORS needed" --> REST
+  CLI -- "record (relayer, 1-tx EVM window)" --> REG
+  EVM --> REG
 ```
 
 | Path | What it does |
 |---|---|
 | `src/core/scan.ts` | Reads chain state, `assess()` turns it into findings, exposure and grade (pure, unit-tested) |
 | `src/core/attest.ts` | Builds the `qday:v1` memo; verifies a tx's secp256k1 + ML-DSA-87 signatures with QoreSign |
+| `src/core/registry.ts` | Reads QDayRegistry over EVM JSON-RPC for Verify's "Recorded in QDayRegistry" row |
+| `contracts/` | create-qorechain-dapp evm-solidity scaffold: `QDayRegistry.sol`, its compiled artifact, `scripts/compile.mjs` |
+| `src/cli/registry.ts` | CLI: deploy QDayRegistry, relay attestations (EVM window, then the EVM tx) |
 | `src/core/addr.ts` | `qor1` <-> `0x` conversion and input parsing |
 | `src/App.tsx`, `src/qorex.ts` | Web app; QoreX connect, key registration + attestation through the wallet |
 | `src/cli/qday.ts`, `src/cli/signer.ts` | CLI; key files (0600), `ensurePqcRegistered` + hybrid `MsgSend` with `@qorechain/sdk` |
@@ -186,7 +226,9 @@ npm run qday -- verify F4ABC81D7A9C1B102A33F8CF7FAA41142AFEFCA070D9B8B80C1A2C516
 npm run qday -- keygen --key ~/.qday/testnet.key     # new testnet key, file mode 0600, prints addresses only
 npm run qday -- whoami --key ~/.qday/testnet.key
 npm run qday -- attest --key ~/.qday/testnet.key --dry-run   # build and check the hybrid tx offline
-npm run qday -- attest --key ~/.qday/testnet.key             # register if needed, then attest
+npm run qday -- attest --key ~/.qday/testnet.key             # register if needed, attest, relay to QDayRegistry
+npm run qday -- record 6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8 --key ~/.qday/testnet.key
+npm run qday -- deploy-registry --key ~/.qday/testnet.key    # deploy your own QDayRegistry
 ```
 
 `scan` exits 1 when any account has a critical finding, so it can gate a CI job or a treasury check.
@@ -200,7 +242,7 @@ npm test         # scoring, address parsing, memo format, gateway allowlist + Wo
 npm run build    # type-check and production build
 ```
 
-[GitHub Actions](.github/workflows/ci.yml) runs the tests, the build, the secret check and a Worker dry-run bundle on
+[GitHub Actions](.github/workflows/ci.yml) runs the tests, the build, the secret check, a Worker dry-run bundle and a recompile of QDayRegistry (the committed artifact must match the source) on
 every push, plus `qday scan` on our own testnet account as an example of the CLI used as a CI gate.
 
 ## Not the QoreX "Q-Day Scanner"
@@ -213,9 +255,13 @@ contract's owner), works in batches from the command line, and records a verifia
 
 QoreChain kits and template:
 
-- [create-qorechain-dapp](https://www.npmjs.com/package/create-qorechain-dapp) 0.13.0, viem + wagmi template (scaffold)
-- [`@qorechain/sdk`](https://www.npmjs.com/package/@qorechain/sdk): hybrid signing, `ensurePqcRegistered`
-- [`@qorechain/evm`](https://www.npmjs.com/package/@qorechain/evm): `qor1` / `0x` address conversion
+- [create-qorechain-dapp](https://www.npmjs.com/package/create-qorechain-dapp) 0.13.0, viem + wagmi template (web app
+  scaffold), and 0.13.1, evm-solidity template (`contracts/`)
+- [`@qorechain/sdk`](https://www.npmjs.com/package/@qorechain/sdk): hybrid signing, `ensurePqcRegistered`,
+  `EthNativeSigner`, `openEvmWindowMsg`
+- [`@qorechain/evm`](https://www.npmjs.com/package/@qorechain/evm): `qor1` / `0x` address conversion, EVM client,
+  EVM window status
+- QoreChain PQC precompiles `pqcVerify` (`0x…0a01`) and `pqcKeyStatus` (`0x…0a02`), called from QDayRegistry
 - [`@qorechain/qoresign`](https://www.npmjs.com/package/@qorechain/qoresign): secp256k1 + ML-DSA-87 signature verification
 - [`@qorechain/qorex-types`](https://www.npmjs.com/package/@qorechain/qorex-types) and
   [`@qorechain/qorex-rainbowkit`](https://www.npmjs.com/package/@qorechain/qorex-rainbowkit): QoreX
@@ -228,7 +274,8 @@ Open source libraries:
 (`@cosmjs/stargate`, `proto-signing`, `encoding`; Apache-2.0), [cosmjs-types](https://github.com/confio/cosmjs-types)
 (Apache-2.0), [TypeScript](https://www.typescriptlang.org) (Apache-2.0), [tsx](https://github.com/privatenumber/tsx)
 (MIT), [Wrangler](https://github.com/cloudflare/workers-sdk) (MIT OR Apache-2.0) and Cloudflare Workers for hosting,
-[Playwright](https://playwright.dev) (Apache-2.0) for the browser tests.
+[Playwright](https://playwright.dev) (Apache-2.0) for the browser tests, [solc-js](https://github.com/ethereum/solc-js)
+0.8.24 (MIT; the Solidity compiler is GPL-3.0) for the contract.
 
 ## Licence
 

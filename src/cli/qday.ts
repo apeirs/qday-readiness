@@ -15,7 +15,7 @@ import { buildMemo, verifyAttestation } from "../core/attest";
 import { describePolicy, formatScan, toJson } from "../core/format";
 import { networkByName, type Network } from "../core/networks";
 import { formatQor, isScanResult, scanAddress, scanMany } from "../core/scan";
-import { attestWithKey, loadKey, offlineSelfTest } from "./signer";
+import { attestWithKey, loadKey, loadRelayer, offlineSelfTest, type LoadedKey } from "./signer";
 
 interface Args {
   cmd: string;
@@ -47,6 +47,12 @@ const HELP = `qday: Q-Day readiness scanner for QoreChain
   qday whoami --key <file>         show and scan the key's account
   qday attest --key <file>         register the PQC key if needed, then send one hybrid-signed attestation
                [--dry-run]         build and verify the signed tx offline, broadcast nothing
+               [--no-registry]     don't relay it to QDayRegistry (relayed by default where one is deployed)
+  qday record <txhash> --key <file>  relay any account's attestation to QDayRegistry, which re-checks
+                                   its ML-DSA-87 signature on chain (the key file only pays the gas)
+  qday deploy-registry --key <file>  deploy contracts/QDayRegistry.sol
+  EVM writes come from the key file's Ethereum-type account (m/44'/60'), funded from the native one;
+  each opens a 1-tx EVM window with a hybrid-signed native message first.
 
   --network testnet|mainnet|localnet   (default testnet)
   --json                               machine-readable output
@@ -104,7 +110,8 @@ async function cmdKeygen(a: Args) {
 
 async function cmdWhoami(a: Args, net: Network) {
   const k = await loadKey(keyPath(a));
-  console.log(`native: ${k.address}\nevm:    ${k.evmAddress}\n`);
+  const r = await loadRelayer(keyPath(a));
+  console.log(`native:  ${k.address}\nevm:     ${k.evmAddress} (same bytes; this account cannot send EVM txs)\nrelayer: ${r.cosmos} / ${r.evm} (Ethereum-type, for QDayRegistry)\n`);
   console.log(formatScan(await scanAddress(k.address, net)));
 }
 
@@ -124,8 +131,35 @@ async function cmdAttest(a: Args, net: Network) {
   }
   const res = await attestWithKey(k, net, (line) => console.log(line));
   console.log(`\nAttestation tx: ${res.txHash}\n  ${net.explorerTx(res.txHash)}${net.explorerNote ? ` (${net.explorerNote})` : ""}\n  ${net.restTx(res.txHash)}`);
+  if (net.registry && !a.flags["no-registry"]) {
+    console.log("");
+    await relay(k, net, res.txHash, keyPath(a));
+  }
   const v = await verifyAttestation(res.txHash, net);
   if (v) for (const ch of v.checks) console.log(`  ${ch.ok === true ? "PASS" : ch.ok === false ? "FAIL" : " -- "}  ${ch.label}: ${ch.detail}`);
+}
+
+async function relay(k: LoadedKey, net: Network, txhash: string, file: string) {
+  const { recordAttestation } = await import("./registry");
+  const r = await recordAttestation(k, await loadRelayer(file), net, txhash, (line) => console.log(line));
+  console.log(`Recorded in QDayRegistry ${net.registry}: ${r.txHash} (EVM block ${r.block}, ${r.gasUsed} gas)`);
+}
+
+async function cmdRecord(a: Args, net: Network) {
+  const hash = a.positional[0];
+  if (!hash) throw new Error("Give the attestation's transaction hash.");
+  const k = await loadKey(keyPath(a));
+  await relay(k, net, hash, keyPath(a));
+  const v = await verifyAttestation(hash, net);
+  const row = v?.checks.find((c) => c.label === "Recorded in QDayRegistry");
+  if (row) console.log(`  ${row.ok === true ? "PASS" : row.ok === false ? "FAIL" : " -- "}  ${row.label}: ${row.detail}`);
+}
+
+async function cmdDeployRegistry(a: Args, net: Network) {
+  const k = await loadKey(keyPath(a));
+  const { deployRegistry } = await import("./registry");
+  const d = await deployRegistry(k, await loadRelayer(keyPath(a)), net, (line) => console.log(line));
+  console.log(`\nQDayRegistry deployed on ${net.chainId} (EVM ${net.evmChainId}) at ${d.address}\n  deploy tx: ${d.txHash} (EVM block ${d.block}, ${d.gasUsed} gas)`);
 }
 
 function keyPath(a: Args): string {
@@ -148,6 +182,10 @@ async function main() {
       return cmdWhoami(a, net);
     case "attest":
       return cmdAttest(a, net);
+    case "record":
+      return cmdRecord(a, net);
+    case "deploy-registry":
+      return cmdDeployRegistry(a, net);
     default:
       console.log(HELP);
   }

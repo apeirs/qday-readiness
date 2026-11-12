@@ -449,6 +449,23 @@ export function App() {
           windows, EIP-7702 delegations and extra authenticators add exposure. Reads are public chain data; nothing
           is stored.
         </p>
+        {NETWORKS.testnet.registry && NETWORKS.testnet.evmExplorer && (
+          <p className="registry">
+            Testnet contract: QDayRegistry{" "}
+            <a href={`${NETWORKS.testnet.evmExplorer}/address/${NETWORKS.testnet.registry}`} target="_blank" rel="noreferrer">
+              <code>{NETWORKS.testnet.registry}</code>
+            </a>{" "}
+            on qorechain-diana (EVM 9800), deployed in tx{" "}
+            <a href={`${NETWORKS.testnet.evmExplorer}/tx/${NETWORKS.testnet.registryDeployTx}`} target="_blank" rel="noreferrer">
+              <code>{NETWORKS.testnet.registryDeployTx?.slice(0, 10)}…</code>
+            </a>
+            . It records an attestation only after checking its ML-DSA-87 signature with the chain&apos;s PQC precompiles;
+            Verify reads it.{" "}
+            <a href={`${REPO}/blob/main/contracts/contracts/QDayRegistry.sol`} target="_blank" rel="noreferrer">
+              Source
+            </a>
+          </p>
+        )}
         <p className="links">
           <a href={REPO} target="_blank" rel="noreferrer">
             Source on GitHub

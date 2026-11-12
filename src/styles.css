@@ -128,4 +128,5 @@ button.example { border-color: var(--accent); color: var(--accent); font-weight:
 .card-pending p { margin: 6px 0 0; }
 .panel.two button.link { margin-top: 8px; font-size: 14px; }
 .note a, .foot a { color: var(--accent); }
+.foot .registry code { word-break: break-all; }
 .facts code { font-size: 13px; }

@@ -133,3 +133,19 @@ test("gateway allows only read routes and rejects path tricks", () => {
     "/etc/passwd",
   ]) assert.equal(upstreamFor(bad), undefined, bad);
 });
+
+test("registry check matches a record to its transaction, and says when a newer one replaced it", async () => {
+  const { registryCheck } = await import("../src/core/registry");
+  const { qdayRegistryAbi } = await import("../contracts/contracts/QDayRegistry.artifact");
+  const fns = qdayRegistryAbi.filter((x) => x.type === "function").map((x) => x.name);
+  for (const f of ["record", "latest", "count", "isReady", "qorAddress"]) assert.ok(fns.includes(f as never), f);
+  const memo = { subject: QOR, grade: "A", readiness: 100, digest: "70b31e56bd69" };
+  const tx = "6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8";
+  const rec = { count: 2, signBytesHash: "0x00", keyHash: "0x00", nativeTx: tx, sequence: 2n, blockNumber: 9939327n, readiness: 100, grade: "A", digest: "70b31e56bd69" } as const;
+  assert.equal(registryCheck(NET, tx.toLowerCase(), 2n, memo, { ...rec }).ok, true);
+  assert.equal(registryCheck(NET, tx, 2n, { ...memo, readiness: 99 }, { ...rec }).ok, false);
+  const older = registryCheck(NET, "3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B", 1n, memo, { ...rec });
+  assert.equal(older.ok, undefined);
+  assert.match(older.detail, /newer attestation/);
+  assert.equal(registryCheck(NET, tx, 2n, memo, undefined).ok, undefined);
+});

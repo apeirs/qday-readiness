@@ -7,6 +7,44 @@ ready with a single hybrid-signed (secp256k1 + ML-DSA-87) transaction that anyon
 It runs as a web app (scan, connect QoreX, attest, verify) and as a command-line tool (`qday`) for batch scans
 and scripted attestations. Testnet (Diana, chain 9800) is the default; mainnet (Vladi) works for scans.
 
+**Live demo: https://qday-readiness.apeir.workers.dev** ·
+[Demo video (2:48)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4) ·
+[Release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0)
+
+![Q-Day Readiness Audit: three testnet accounts graded F, D and A, with the critical finding and its fix](docs/featured.png)
+
+Try it: [scan three example testnet accounts](https://qday-readiness.apeir.workers.dev/?a=qor1p2pkkdjkg3486c87skry656ys5wharvz9hwkxm,qor1ll7hhj8eskhxgsr2f6me6v0yu8du8yn5knmwxq,qor1llpx02e33279fz3dr3wf2kja47tx06h9kgjxj3)
+or [verify our attestation](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8).
+
+## On QoreChain testnet
+
+Network: `qorechain-diana` (testnet, chain 9800).
+
+| What | Value |
+|---|---|
+| Testnet address used | `qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m` |
+| Hybrid-signed attestation, web app "Attest with QoreX" (QoreX wallet mock) through the Worker gateway (block 9,934,842) | [`6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8`](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) · [raw JSON](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) |
+| Hybrid-signed attestation, `qday attest` CLI (block 9,934,042) | [`3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B`](https://qday-readiness.apeir.workers.dev/?tx=3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) · [raw JSON](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) |
+| ML-DSA-87 key registration for that address (block 9,934,040) | `CFE50F413E357E7501E0468FE8E6939F87D6D2B807B24FB192DCF5C927B587B3` |
+
+Both attestations carry the memo `qday:v1;qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m;A;100;70b31e56bd69` and pass
+all four checks: committed, secp256k1 signature, ML-DSA-87 signature against the registered key (sign-bytes v2),
+and the memo. Re-check either one with `npm run qday -- verify <hash>` or the links above. The QoreChain explorers
+open on mainnet by default: switch them to Testnet to see these transactions.
+
+## Video and stills
+
+Silent screen recording with captions, 2:48, attached to [release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0):
+
+- [qday-demo.mp4](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4): examples graded F/D/A, share link, QoreX scan, attestation, verify, CLI as a CI gate
+- [still-grade-F.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-grade-F.png) ·
+  [still-attest-real.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-attest-real.png) ·
+  [still-verify.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-verify.png) ·
+  [still-cli.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-cli.png)
+
+In the video the wallet is QoreChain's `@qorechain/qorex-wallet-mock` (the QoreX provider used for browser tests),
+and the attestation shown was sent with `qday attest`.
+
 ## Why it matters
 
 QoreChain protects an account with a post-quantum key only after that key is registered. Until then the account
@@ -120,4 +158,4 @@ browser tests.
 
 ## Licence
 
-MIT
+[MIT](LICENSE) © 2026 apeir. Built for Build Before Q-Day, the QoreChain Developer Fest (Quantum Pass). #BuildBeforeQDay

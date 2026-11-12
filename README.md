@@ -1,5 +1,7 @@
 # Q-Day Readiness Audit
 
+[![Built on QoreChain](https://build.qorechain.io/badge/q-day-readiness-audit.svg)](https://build.qorechain.io/p/q-day-readiness-audit)
+
 Which QoreChain accounts would a quantum attacker take first? This tool scans any `qor1…` or `0x…` address on
 QoreChain, scores how exposed it is, tells you the one thing to fix, and lets you prove your own account is
 ready with a single hybrid-signed (secp256k1 + ML-DSA-87) transaction that anyone can verify.
@@ -9,7 +11,8 @@ and scripted attestations. Testnet (Diana, chain 9800) is the default; mainnet (
 
 **Live demo: https://qday-readiness.apeir.workers.dev** ·
 [Demo video (2:48)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4) ·
-[Release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0)
+[Release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0) ·
+[Fest project page](https://build.qorechain.io/p/q-day-readiness-audit)
 
 ![Q-Day Readiness Audit: three testnet accounts graded F, D and A, with the critical finding and its fix](docs/featured.png)
 

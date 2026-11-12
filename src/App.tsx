@@ -152,11 +152,11 @@ export function App() {
   const qorex = qorexState();
 
   const runScan = useCallback(
-    async (inputs: string[]) => {
+    async (inputs: string[], tx?: string) => {
       if (!inputs.length) return;
       setScanning(true);
       setRows([]);
-      writeUrl(netName, inputs);
+      writeUrl(netName, inputs, tx);
       const acc: Row[] = new Array(inputs.length);
       await scanMany(inputs, net, {}, () => undefined).then((res) => res.forEach((r, i) => (acc[i] = r)));
       setRows(acc);
@@ -184,7 +184,7 @@ export function App() {
   );
 
   useEffect(() => {
-    if (initial.addrs.length) void runScan(initial.addrs);
+    if (initial.addrs.length) void runScan(initial.addrs, initial.tx || undefined);
     if (initial.tx) void runVerify(initial.tx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -232,7 +232,7 @@ export function App() {
       setTxInput(res.txHash);
       writeUrl(netName, [address], res.txHash);
       await runVerify(res.txHash);
-      void runScan([address]);
+      void runScan([address], res.txHash);
       setAttestStep("");
     } catch (err) {
       setAttestStep("");

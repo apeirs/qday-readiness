@@ -15,7 +15,7 @@ import { buildMemo, verifyAttestation } from "../core/attest";
 import { describePolicy, formatScan, toJson } from "../core/format";
 import { networkByName, type Network } from "../core/networks";
 import { formatQor, isScanResult, scanAddress, scanMany } from "../core/scan";
-import { attestWithKey, loadKey, loadRelayer, offlineSelfTest, type LoadedKey } from "./signer";
+import { attestWithKey, describeKeyOrigins, loadKey, loadRelayer, offlineSelfTest, PQC_ORIGIN_TEXT, type LoadedKey } from "./signer";
 
 interface Args {
   cmd: string;
@@ -44,7 +44,8 @@ const HELP = `qday: Q-Day readiness scanner for QoreChain
   qday scan <qor1…|0x…> [more…]   score accounts (or --file list.txt, one per line)
   qday verify <txhash>             check a transaction's hybrid signature and attestation memo
   qday keygen --key <file>         create a testnet key file (0600); prints addresses only
-  qday whoami --key <file>         show and scan the key's account
+  qday whoami --key <file>         show and scan the key's account, and check where its ML-DSA-87 key
+                                   comes from (flags one computable from the ECDSA key)
   qday attest --key <file>         register the PQC key if needed, then send one hybrid-signed attestation
                [--dry-run]         build and verify the signed tx offline, broadcast nothing
                [--no-registry]     don't relay it to QDayRegistry (relayed by default where one is deployed)
@@ -69,7 +70,10 @@ async function cmdScan(a: Args, net: Network) {
   } else {
     console.log(`Q-Day readiness · ${net.chainId} · ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`);
     const policy = results.find((r) => isScanResult(r) && r.policy);
-    console.log(policy && isScanResult(policy) && policy.policy ? `Network policy: ${describePolicy(policy.policy)}\n` : "Network policy: could not be read\n");
+    // Only addresses that parsed were scanned; with none, the policy was never asked for.
+    if (results.some(isScanResult)) {
+      console.log(policy && isScanResult(policy) && policy.policy ? `Network policy: ${describePolicy(policy.policy)}\n` : "Network policy: could not be read\n");
+    } else console.log("");
     for (const r of results) console.log(isScanResult(r) ? formatScan(r) : `${r.input}\n  ERROR  ${r.error}`, "\n");
     const ok = results.filter(isScanResult);
     if (ok.length > 1) {
@@ -112,7 +116,21 @@ async function cmdWhoami(a: Args, net: Network) {
   const k = await loadKey(keyPath(a));
   const r = await loadRelayer(keyPath(a));
   console.log(`native:  ${k.address}\nevm:     ${k.evmAddress} (same bytes; this account cannot send EVM txs)\nrelayer: ${r.cosmos} / ${r.evm} (Ethereum-type, for QDayRegistry)\n`);
-  console.log(formatScan(await scanAddress(k.address, net)));
+  const [scan, relayerScan] = await Promise.all([scanAddress(k.address, net), scanAddress(r.cosmos, net)]);
+  console.log(formatScan(scan));
+  // Which derivation produced each registered key (offline, from the key file; nothing is printed but the verdict).
+  const origins = await describeKeyOrigins(keyPath(a), [
+    { address: k.address, privateKey: k.privateKey, fingerprint: scan.pqc?.fingerprint },
+    { address: r.cosmos, privateKey: hexToBytes(r.privateKey), fingerprint: relayerScan.pqc?.fingerprint },
+  ]);
+  console.log("\nPQC key origin (checked offline against this key file):");
+  for (const o of origins) console.log(`  ${o.address}: ${o.origin ? PQC_ORIGIN_TEXT[o.origin] : "no ML-DSA-87 key registered"}`);
+  if (origins.some((o) => o.origin === "ecdsa-derived")) process.exitCode = 1;
+}
+
+function hexToBytes(h: string): Uint8Array {
+  const s = h.replace(/^0x/, "");
+  return Uint8Array.from(s.match(/../g) ?? [], (b) => parseInt(b, 16));
 }
 
 async function cmdAttest(a: Args, net: Network) {
@@ -186,8 +204,14 @@ async function main() {
       return cmdRecord(a, net);
     case "deploy-registry":
       return cmdDeployRegistry(a, net);
+    case "help":
+    case "--help":
+    case "-h":
+      return console.log(HELP);
     default:
+      console.error(`qday: unknown command "${a.cmd}".\n`);
       console.log(HELP);
+      process.exitCode = 2;
   }
 }
 

@@ -196,7 +196,8 @@ export async function fetchPolicy(net: Network, http: HttpOptions = {}): Promise
 const b64Bytes = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
 const b64Length = (s: string) => Math.floor((s.length * 3) / 4) - (s.endsWith("==") ? 2 : s.endsWith("=") ? 1 : 0);
 
-async function sha256Hex16(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+/** First 16 hex of a SHA-256: the fingerprint the scan shows for a registered key. */
+export async function sha256Hex16(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   const d = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
   return Array.from(d.slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
 }

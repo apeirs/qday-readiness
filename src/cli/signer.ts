@@ -3,6 +3,7 @@
  * file, kept in memory, and never printed or logged. QoreX users never need
  * this: the web app asks the wallet to sign instead.
  */
+import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { Registry } from "@cosmjs/proto-signing";
 import { defaultRegistryTypes } from "@cosmjs/stargate";
@@ -11,7 +12,9 @@ import {
   createClient,
   deriveNativeAccount,
   derivePqcCanonical,
+  derivePqcLegacy,
   deriveUnifiedAccount,
+  generatePqcKeypair,
   directSignerFromPrivateKey,
   ensurePqcRegistered,
   pqcVerify,
@@ -23,7 +26,7 @@ import {
 import { attestationMsg, buildMemo } from "../core/attest";
 import { getJson } from "../core/http";
 import type { Network } from "../core/networks";
-import { formatQor, scanAddress } from "../core/scan";
+import { formatQor, scanAddress, sha256Hex16 } from "../core/scan";
 
 export interface LoadedKey {
   address: string;
@@ -37,7 +40,15 @@ export const REGISTER_FEE_UQOR = 90_000n;
 const SEND_FEE_UQOR = 60_000n;
 
 function readMnemonic(file: string): string {
-  const st = statSync(file);
+  let st;
+  try {
+    st = statSync(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`Key file ${file} not found. Create a testnet key with \`qday keygen --key ${file}\`, or pass --key <file> holding a 24-word mnemonic (mode 600).`);
+    }
+    throw err;
+  }
   if ((st.mode & 0o077) !== 0) throw new Error(`${file} is readable by others; run chmod 600 on it.`);
   const mnemonic = readFileSync(file, "utf8").trim().split(/\s+/).join(" ");
   if (!validateMnemonic(mnemonic)) throw new Error(`${file} does not hold a valid BIP-39 mnemonic.`);
@@ -53,6 +64,60 @@ export async function loadKey(file: string): Promise<LoadedKey> {
     privateKey: acct.privateKey,
     pqc: derivePqcCanonical(acct.address, mnemonic),
   };
+}
+
+/**
+ * Where a registered ML-DSA-87 key came from, as far as this key file can tell:
+ * - "address-bound": the SDK's current derivation from the mnemonic and the address (what `qday attest` registers);
+ * - "mnemonic-only": the deprecated "bridge" derivation from the mnemonic alone (rotate it);
+ * - "ecdsa-derived": computed from the account's secp256k1 private key, as SDK releases before 0.13.0 did for
+ *   private-key accounts. A quantum attacker who recovers the ECDSA key then gets the ML-DSA-87 key too;
+ * - "other": not derivable from this file (another wallet or derivation registered it).
+ */
+export type PqcKeyOrigin = "address-bound" | "mnemonic-only" | "ecdsa-derived" | "other";
+
+const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+
+/** The pre-0.13.0 seed derivation of `unifiedAccountFromSeed`: SHAKE256("qorechain:pqc:v1|<qor1>|seed:<private key hex>"). */
+export function ecdsaDerivedPqcKey(address: string, privateKey: Uint8Array): PqcKeypair {
+  const seed = createHash("shake256", { outputLength: 32 }).update(`qorechain:pqc:v1|${address}|seed:${hex(privateKey)}`).digest();
+  return generatePqcKeypair(new Uint8Array(seed));
+}
+
+/** The candidate keys this key file could have registered for `address`, by origin. */
+export function pqcKeyCandidates(address: string, mnemonic: string, privateKey: Uint8Array): Record<Exclude<PqcKeyOrigin, "other">, Uint8Array> {
+  return {
+    "address-bound": derivePqcCanonical(address, mnemonic).publicKey,
+    "mnemonic-only": derivePqcLegacy(mnemonic).publicKey,
+    "ecdsa-derived": ecdsaDerivedPqcKey(address, privateKey).publicKey,
+  };
+}
+
+/** Match a registered key's fingerprint (first 16 hex of its SHA-256) against the candidates. */
+export async function pqcKeyOrigin(fingerprint: string, candidates: Partial<Record<PqcKeyOrigin, Uint8Array>>): Promise<PqcKeyOrigin> {
+  for (const [origin, publicKey] of Object.entries(candidates)) {
+    if ((await sha256Hex16(new Uint8Array(publicKey))) === fingerprint) return origin as PqcKeyOrigin;
+  }
+  return "other";
+}
+
+export const PQC_ORIGIN_TEXT: Record<PqcKeyOrigin, string> = {
+  "address-bound": "this key file's ML-DSA-87 key, derived from the mnemonic and bound to the address; it cannot be computed from the ECDSA key",
+  "mnemonic-only": "this key file's legacy mnemonic-only ML-DSA-87 key (deprecated): rotate it with rotatePqcKeyMsgFromMnemonic",
+  "ecdsa-derived":
+    "CRITICAL: the ML-DSA-87 key is computed from this account's ECDSA private key (pre-0.13.0 SDK seed derivation). A quantum attacker who recovers the ECDSA key gets it too: rotate to a key from independent entropy",
+  other: "not derivable from this key file: another wallet or derivation registered it; compare its fingerprint with that wallet",
+};
+
+/** Origin of each account's registered key, for `qday whoami`. */
+export async function describeKeyOrigins(file: string, accounts: { address: string; privateKey: Uint8Array; fingerprint?: string }[]) {
+  const mnemonic = readMnemonic(file);
+  return Promise.all(
+    accounts.map(async (a) => ({
+      address: a.address,
+      origin: a.fingerprint ? await pqcKeyOrigin(a.fingerprint, pqcKeyCandidates(a.address, mnemonic, a.privateKey)) : undefined,
+    })),
+  );
 }
 
 /**

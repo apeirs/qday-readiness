@@ -21,6 +21,22 @@ Try it: [scan three example testnet accounts](https://qday-readiness.apeir.worke
 or [verify our attestation](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8).
 Both are also one click on the page: "Try examples (F, D, A)" and "Verify an example attestation".
 
+## Judge quick path (about 3 minutes, no keys, no funds)
+
+Node 22 or newer. Nothing below signs or sends a transaction.
+
+```sh
+git clone https://github.com/apeirs/qday-readiness && cd qday-readiness
+npm ci
+npm test                                   # unit + CLI tests, offline
+npm run qday -- scan qor1p2pkkdjkg3486c87skry656ys5wharvz9hwkxm qor1ll7hhj8eskhxgsr2f6me6v0yu8du8yn5knmwxq 0xffc267ab318abc548a2d1c5c955a5daf9667eae5
+#   grades F, D, A from live testnet; exits 1 on purpose because one account has a critical finding (CI-gate use)
+npm run qday -- verify 6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8
+#   checks both signatures of our attestation against the signer's registered ML-DSA-87 key, and the QDayRegistry record
+npm run build && npm start                 # the web app on http://127.0.0.1:8080
+npx playwright install chromium && npm run test:e2e   # optional: the browser checks below, broadcasts blocked
+```
+
 ## Quantum Pass requirements: where to find each one
 
 | Requirement | Evidence |
@@ -85,11 +101,13 @@ the owner out for good. The fix is cheap and one-time, but you have to know whic
 | ML-DSA-87 key registered | `qorechain/pqc/v1/account` | Missing on a funded account with a public ECDSA key: **critical** (-85) |
 | Funded, key not yet published | `cosmos/auth`, `cosmos/bank`, `cosmos/staking` | **high** (-60) |
 | Empty account without a PQC key | `cosmos/auth` | low (-25) |
+| Address the chain has never seen | `cosmos/auth`, `cosmos/bank` | info (-15): safe until funded, but without a post-quantum key it cannot grade A |
 | Proof of possession at registration | `possession_proven` | info (-3) |
 | Open EVM authorisation window | `qorechain/pqc/v1/evm_window` | -5 if scoped to targets, -15 if not |
 | EIP-7702 delegation | `eth_getCode` (`0xef0100…`) | -10 (-2 if the delegate has no code) |
 | Extra authenticators on an abstract account | `qorechain/abstractaccount/v1` | -5 |
 | Registered key is a real ML-DSA-87 key | `qorechain/pqc/v1/account` `public_key` | must be 2,592 bytes (FIPS 204); otherwise **high** (-40). The card shows the size and a SHA-256 fingerprint to compare with your wallet |
+| Registered key can be forged | `qorechain/pqc/v1/account` `public_key` | **critical** (-85) when everything after the 32-byte seed (the t1 part) is zero: such a key accepts a signature made with no secret at all (`test/core.test.ts` builds one and checks it with the SDK's `pqcVerify`). Same rule as the SDK's `isDegeneratePqcPublicKey` |
 | PQC key bound to the account's own classical key | `ecdsa_pubkey` vs the `cosmos/auth` public key | low (-5) if they differ |
 | The network actually enforces the PQC key | `qorechain/pqc/v1/params` (`hybrid_signature_mode`, `allow_classical_fallback`) | medium (-20) on registered accounts if hybrid signatures are not required or classical-only fallback is on |
 | Contracts and module accounts | `eth_getCode`, account type | not scored: no key to protect |
@@ -224,7 +242,7 @@ the same app and gateway with Node and no dependencies.
 ```sh
 npm run qday -- scan qor1p2pkkdjkg3486c87skry656ys5wharvz9hwkxm 0xffc267ab318abc548a2d1c5c955a5daf9667eae5
 npm run qday -- scan --file treasury.txt --json      # one address per line, # starts a comment
-npm run qday -- verify F4ABC81D7A9C1B102A33F8CF7FAA41142AFEFCA070D9B8B80C1A2C5167733D68
+npm run qday -- verify 6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8
 npm run qday -- keygen --key ~/.qday/testnet.key     # new testnet key, file mode 0600, prints addresses only
 npm run qday -- whoami --key ~/.qday/testnet.key
 npm run qday -- attest --key ~/.qday/testnet.key --dry-run   # build and check the hybrid tx offline
@@ -235,14 +253,25 @@ npm run qday -- deploy-registry --key ~/.qday/testnet.key    # deploy your own Q
 
 `scan` exits 1 when any account has a critical finding, so it can gate a CI job or a treasury check.
 `--network mainnet` scans mainnet; `attest` refuses to run without enough balance and says how much it needs.
-Key files that other users can read are refused.
+Key files that other users can read are refused. `whoami` also checks, offline, how the registered ML-DSA-87 key
+was made: bound to the address (SDK 0.13+, QoreX), from the mnemonic only, or derived from the ECDSA private key
+(SDK before 0.13.0 with `unifiedAccountFromSeed`). The last one means whoever recovers the ECDSA key also has the
+post-quantum key, so `whoami` exits 1 and says to rotate. Unknown commands exit 2.
 
 ## Tests
 
 ```sh
-npm test         # scoring, address parsing, memo format, gateway allowlist + Worker (path tricks, methods, broadcast route, cache)
-npm run build    # type-check and production build
+npm test           # scoring (incl. a forged ML-DSA-87 signature against a zero-t1 key), address parsing, memo format,
+                   # CLI errors and key-origin checks, gateway allowlist + Worker (path tricks, methods, broadcast route, cache)
+npm run build      # type-check and production build
+npm run test:e2e   # after the build: Playwright drives the built app in Chromium (CHROME=/path/to/chrome to reuse one)
 ```
+
+`test:e2e` ([test/e2e/browser.mjs](test/e2e/browser.mjs)) checks the one-click examples (F, D, A) in light at
+desktop width and dark at phone width, a never-seen address, the `?tx=` verify link, and QoreX through
+`@qorechain/qorex-wallet-mock` with a fresh throwaway key: "Scan my wallet" scans that account and "Attest with
+QoreX" stops before signing because it holds 0 QOR. Every transaction broadcast is blocked and counted; the run
+fails if the page tries one.
 
 [GitHub Actions](.github/workflows/ci.yml) runs the tests, the build, the secret check, a Worker dry-run bundle and a recompile of QDayRegistry (the committed artifact must match the source) on
 every push, plus `qday scan` on our own testnet account as an example of the CLI used as a CI gate.
@@ -276,7 +305,7 @@ Open source libraries:
 (`@cosmjs/stargate`, `proto-signing`, `encoding`; Apache-2.0), [cosmjs-types](https://github.com/confio/cosmjs-types)
 (Apache-2.0), [TypeScript](https://www.typescriptlang.org) (Apache-2.0), [tsx](https://github.com/privatenumber/tsx)
 (MIT), [Wrangler](https://github.com/cloudflare/workers-sdk) (MIT OR Apache-2.0) and Cloudflare Workers for hosting,
-[Playwright](https://playwright.dev) (Apache-2.0) for the browser tests, [solc-js](https://github.com/ethereum/solc-js)
+[Playwright](https://playwright.dev) (Apache-2.0) for the browser tests ([test/e2e](test/e2e)), [solc-js](https://github.com/ethereum/solc-js)
 0.8.24 (MIT; the Solidity compiler is GPL-3.0) for the contract.
 
 ## Licence

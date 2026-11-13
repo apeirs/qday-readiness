@@ -41,7 +41,21 @@ test("funded account without a published key is high, empty one low, unseen info
   assert.deepEqual([ids(empty), empty.grade], [["no-pqc-key-empty"], "B"]);
   const unseen = assess(parseAddress(QOR), NET, raw({ auth: null, balances: [] }));
   assert.equal(unseen.kind, "unseen");
-  assert.equal(unseen.grade, "A");
+  assert.deepEqual([unseen.grade, unseen.readiness], ["B", 85]);
+});
+
+test("no account without a registered post-quantum key grades A", () => {
+  const cases: Partial<Raw>[] = [
+    { auth: null, balances: [] },
+    { auth: { sequence: "0" }, balances: [] },
+    { auth: { pub_key: PUB }, balances: [] },
+    { auth: { sequence: "0" }, balances: [{ denom: "uqor", amount: "1" }] },
+    { auth: { pub_key: PUB }, balances: [{ denom: "uqor", amount: "1" }] },
+  ];
+  for (const c of cases) {
+    const r = assess(parseAddress(QOR), NET, raw(c));
+    assert.ok(!r.pqc && r.grade !== "A" && r.readiness < 90, `${ids(r)} -> ${r.grade} ${r.readiness}`);
+  }
 });
 
 test("registered account scores A; a missing possession proof costs 3", () => {
@@ -79,6 +93,46 @@ test("registered key: size check, fingerprint and classical binding", () => {
   assert.equal(short.grade, "C");
   const other = assess(parseAddress(QOR), NET, raw({ auth: { pub_key: PUB }, pqc: { ...PQC, ecdsa_pubkey: "Bxx" } }));
   assert.deepEqual([other.pqc?.classicalBinding, other.readiness], ["differs", 95]);
+});
+
+test("a registered ML-DSA-87 key whose t1 part is all zero is flagged as forgeable", async () => {
+  const { isForgeableMlDsa87Key } = await import("../src/core/scan");
+  const { generatePqcKeypair, isDegeneratePqcPublicKey } = await import("@qorechain/sdk");
+  const real = generatePqcKeypair(new Uint8Array(32).fill(9)).publicKey;
+  const zeroT1 = new Uint8Array(ML_DSA_87_PUBLIC_KEY_BYTES);
+  zeroT1.set(real.slice(0, 32)); // keep rho, zero the rest
+  // Same verdict as the SDK's own test, on both kinds of key.
+  for (const k of [real, zeroT1, new Uint8Array(1952)]) assert.equal(isForgeableMlDsa87Key(k), isDegeneratePqcPublicKey(k));
+  assert.deepEqual([isForgeableMlDsa87Key(real), isForgeableMlDsa87Key(zeroT1)], [false, true]);
+  const b = (u: Uint8Array) => Buffer.from(u).toString("base64");
+  const ok = assess(parseAddress(QOR), NET, raw({ auth: { pub_key: PUB }, pqc: { ...PQC, public_key: b(real) } }));
+  assert.deepEqual([ids(ok), ok.grade, ok.pqc?.forgeable], [["pqc-registered"], "A", false]);
+  const bad = assess(parseAddress(QOR), NET, raw({ auth: { pub_key: PUB }, pqc: { ...PQC, public_key: b(zeroT1) }, balances: [{ denom: "uqor", amount: "5" }] }));
+  assert.equal(bad.findings[0].id, "pqc-key-forgeable");
+  assert.deepEqual([bad.findings[0].severity, bad.grade, bad.pqc?.forgeable], ["critical", "F", true]);
+  assert.match(bad.verdict, /^Exposed: registered ML-DSA-87 key can be forged/);
+});
+
+test("why it is critical: a signature made with no secret at all verifies under a zero-t1 key", async () => {
+  const { createHash } = await import("node:crypto");
+  const { generatePqcKeypair, pqcVerify } = await import("@qorechain/sdk");
+  const shake = (...parts: Uint8Array[]) => {
+    const h = createHash("shake256", { outputLength: 64 });
+    for (const part of parts) h.update(part);
+    return new Uint8Array(h.digest());
+  };
+  const real = generatePqcKeypair(new Uint8Array(32).fill(9)).publicKey;
+  const zeroT1 = new Uint8Array(ML_DSA_87_PUBLIC_KEY_BYTES);
+  zeroT1.set(real.slice(0, 32));
+  const msg = new TextEncoder().encode("qday:v1;forged");
+  // FIPS 204 verify with t1 = 0 checks c~ == H(mu || w1Encode(HighBits(A*z))). Take z = 0, hint = 0:
+  // then w1 = 0, so c~ = H(mu || 1,024 zero bytes) and nothing secret is involved.
+  const mu = shake(shake(zeroT1), new Uint8Array([0, 0]), msg); // M' = 0 || |ctx| = 0 || M
+  const sig = new Uint8Array(4627); // c~ (64) || z (7 x 256 x 20 bits) || hints (75 + 8), hints all zero
+  sig.set(shake(mu, new Uint8Array(1024)));
+  for (let i = 64; i < 64 + 4480; i += 5) [sig[i + 2], sig[i + 4]] = [0x08, 0x80]; // each z coefficient packed as gamma1 - 0 = 2^19
+  assert.equal(pqcVerify(zeroT1, msg, sig), true);
+  assert.equal(pqcVerify(real, msg, sig), false);
 });
 
 test("EIP-7702 delegated account is an account, not a contract", () => {

@@ -28,6 +28,8 @@ export interface PqcKeyInfo {
   fingerprint?: string;
   /** Whether the classical key bound at registration is the account's own on-chain key. */
   classicalBinding?: "matches" | "differs" | "unknown";
+  /** ML-DSA-87 key whose t1 part is all zero: anyone can forge its signatures. */
+  forgeable?: boolean;
 }
 
 /** The chain's PQC enforcement (qorechain/pqc/v1/params): a registered key only helps if it is required. */
@@ -42,6 +44,19 @@ export interface NetworkPolicy {
 
 /** ML-DSA-87 public key size in bytes (FIPS 204, security category 5). */
 export const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
+/** An ML-DSA public key is `rho` (32 bytes) followed by the packed vector t1. */
+const ML_DSA_RHO_BYTES = 32;
+
+/**
+ * True for an ML-DSA-87 public key whose t1 part is all zero. With t1 = 0 the
+ * verification equation no longer depends on any secret, so anyone can produce
+ * signatures that verify (the same test as @qorechain/sdk `isDegeneratePqcPublicKey`).
+ */
+export function isForgeableMlDsa87Key(publicKey: Uint8Array): boolean {
+  if (publicKey.length !== ML_DSA_87_PUBLIC_KEY_BYTES) return false;
+  for (let i = ML_DSA_RHO_BYTES; i < publicKey.length; i++) if (publicKey[i] !== 0) return false;
+  return true;
+}
 
 export interface EvmWindowInfo {
   live: boolean;
@@ -293,6 +308,7 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
       fingerprint: raw.pqcKeyDigest,
       classicalBinding:
         raw.pqc.ecdsa_pubkey && pubKey?.key ? (raw.pqc.ecdsa_pubkey === pubKey.key ? "matches" : "differs") : "unknown",
+      forgeable: typeof raw.pqc.public_key === "string" && raw.pqc.public_key ? isForgeableMlDsa87Key(b64Bytes(raw.pqc.public_key)) : undefined,
     };
   }
 
@@ -354,7 +370,8 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
       add({
         id: "unseen",
         severity: "info",
-        points: 10,
+        // 15, not less: an address with no post-quantum key must not reach grade A.
+        points: 15,
         title: "The chain has never seen this address",
         detail: "No balance, no transactions, no keys. It is safe until it receives funds.",
         fix: "Register a post-quantum key as the first thing you do with it.",
@@ -384,6 +401,18 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
         title: "Registered key is not the size of an ML-DSA-87 public key",
         detail: `The registered key is ${pqc.publicKeyBytes.toLocaleString("en-US")} bytes; an ML-DSA-87 public key is ${ML_DSA_87_PUBLIC_KEY_BYTES.toLocaleString("en-US")} (FIPS 204). A key that cannot verify signatures locks the account rather than protecting it.`,
         fix: "Rotate to a fresh ML-DSA-87 key from QoreX or `@qorechain/sdk` while the classical key still controls the account.",
+      });
+    }
+    if (pqc.forgeable) {
+      add({
+        id: "pqc-key-forgeable",
+        severity: "critical",
+        points: 85,
+        title: "Registered ML-DSA-87 key can be forged by anyone",
+        detail:
+          "Everything after the first 32 bytes of the registered public key (its t1 part) is zero. ML-DSA verification then no longer depends on any secret, " +
+          "so anyone can make an ML-DSA-87 signature this key accepts. The account is effectively guarded by its ECDSA key alone, and the hybrid check is a formality.",
+        fix: "Rotate to a fresh ML-DSA-87 key now (QoreX or `rotatePqcKeyMsg` in @qorechain/sdk), or move the funds to a new account that registers a proper key. Anyone can forge the old key's half of a rotation, so do it before someone else does.",
       });
     }
     if (pqc.classicalBinding === "differs") {
@@ -497,7 +526,9 @@ export function assess(addr: ParsedAddress, net: Network, raw: Raw, latestHeight
       : pqc
         ? exposure === 0 || exposure <= 5
           ? "Quantum-ready: native transfers need the ML-DSA-87 signature."
-          : `Quantum key in place; ${worst.title.toLowerCase()}.`
+          : worst.severity === "critical"
+            ? `Exposed: ${worst.title.charAt(0).toLowerCase()}${worst.title.slice(1)}.`
+            : `Quantum key in place; ${worst.title.toLowerCase()}.`
         : worst.severity === "critical"
           ? "Exposed: register a post-quantum key before someone else does."
           : worst.severity === "high"

@@ -11,7 +11,7 @@ It runs as a web app (scan, connect QoreX, attest, verify) and as a command-line
 and scripted attestations. Testnet (Diana, chain 9800) is the default; mainnet (Vladi) works for scans.
 
 **Live demo: https://qday-readiness.apeir.workers.dev** ·
-[Demo video (2:48)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4) ·
+[Demo video (2:46)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4) ·
 [Release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0) ·
 [Fest project page](https://build.qorechain.io/p/q-day-readiness-audit)
 
@@ -29,7 +29,7 @@ Both are also one click on the page: "Try examples (F, D, A)" and "Verify an exa
 | Connect QoreX | RainbowKit + `@qorechain/qorex-rainbowkit` for the EVM lane, `@qorechain/qorex-types` for the native lane ("Scan my wallet", "Attest with QoreX"): [`src/qorex.ts`](src/qorex.ts) |
 | Deploy on testnet | Contract **QDayRegistry** at [`0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A`](https://explore.qore.network/address/0xfcDd726E5cAeb40df793560F3FbbdBC669F0354A) on `qorechain-diana` (EVM 9800), deploy tx [`0xbf86da97…`](https://explore.qore.network/tx/0xbf86da9725961930daad2c38e157071b7f746f13b4e3a64ca285312abe3ca999). The app's Verify reads it; both attestations below are recorded in it. Plus the hosted app at https://qday-readiness.apeir.workers.dev |
 | One hybrid-signed transaction | Two: [`6B8EED3E…`](https://qday-readiness.apeir.workers.dev/?tx=6B8EED3EC26B019CB9485BEFFC6B5F81DB04A59F54703A404DB539852ED045F8) (web app) and [`3DC0994B…`](https://qday-readiness.apeir.workers.dev/?tx=3DC0994B1BFF78D1ECA2D90CFCE02DF08CA54A0FDADAFA87BB23A6C769D2113B) (CLI), each verified in the app with QoreSign |
-| Repo, README, MIT licence, featured image, video <= 3 min, testnet address | This repo, [LICENSE](LICENSE), [docs/featured.png](docs/featured.png), [qday-demo.mp4 (2:48)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4), `qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m` |
+| Repo, README, MIT licence, featured image, video <= 3 min, testnet address | This repo, [LICENSE](LICENSE), [docs/featured.png](docs/featured.png), [qday-demo.mp4 (2:46)](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4), `qor1ay8cveqak7yx8wd4us9mk8q7eak3dj56nz545m` |
 | Credits for kits and libraries | [Built with](#built-with) |
 
 ## On QoreChain testnet
@@ -57,16 +57,18 @@ open on mainnet by default: switch them to Testnet to see these transactions.
 
 ## Video and stills
 
-Silent screen recording with captions, 2:48, attached to [release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0):
+Silent screen recording of the live app with captions, 2:46, attached to [release v0.1.0](https://github.com/apeirs/qday-readiness/releases/tag/v0.1.0):
 
-- [qday-demo.mp4](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4): examples graded F/D/A, share link, QoreX scan, attestation, verify, CLI as a CI gate
+- [qday-demo.mp4](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/qday-demo.mp4): the three steps and the live PQC policy line, one-click examples graded F/D/A, the registered-key checks, share link, QoreX scan, attestation, one-click example verify (incl. QDayRegistry), CLI as a CI gate
 - [still-grade-F.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-grade-F.png) ·
   [still-attest-real.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-attest-real.png) ·
   [still-verify.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-verify.png) ·
-  [still-cli.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-cli.png)
+  [still-cli.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-cli.png) ·
+  [still-grade-A-key.png](https://github.com/apeirs/qday-readiness/releases/download/v0.1.0/still-grade-A-key.png)
 
 In the video the wallet is QoreChain's `@qorechain/qorex-wallet-mock` (the QoreX provider used for browser tests),
-and the attestation shown was sent with `qday attest`.
+and the attestation shown was sent with `qday attest`. For the one-click examples shot the browser's network latency
+was raised so the cards can be seen filling in.
 
 ## Why it matters
 
